@@ -1,22 +1,23 @@
+import java.math.BigDecimal;
 import java.util.Arrays;
 
 public class Book {
     private int idOfBook;
     private String nameOfBook;
     private Author[] authors;
-    private Publisher publisher;
+    private Publisher[] publisher;
     private int publishingYear;
     private int amountOfPages;
-    private double priceOfBook;
+    private BigDecimal priceOfBook;
     private CoverType coverType;
 
     public Book(int idOfBook,
                 String nameOfBook,
                 Author[] authors,
-                Publisher publisher,
+                Publisher[] publisher,
                 int publishingYear,
                 int amountOfPages,
-                double priceOfBook,
+                BigDecimal priceOfBook,
                 CoverType coverType) {
         this.idOfBook = idOfBook;
         this.nameOfBook = nameOfBook;
@@ -34,7 +35,7 @@ public class Book {
                 "idOfBook=" + idOfBook +
                 ", nameOfBook='" + nameOfBook + '\'' +
                 ", authors=" + Arrays.toString(authors) +
-                ", publisher=" + publisher +
+                ", publisher=" + Arrays.toString(publisher) +
                 ", publishingYear=" + publishingYear +
                 ", amountOfPages=" + amountOfPages +
                 ", priceOfBook=" + priceOfBook +
@@ -66,11 +67,11 @@ public class Book {
         this.authors = authors;
     }
 
-    public Publisher getPublisher() {
+    public Publisher[] getPublisher() {
         return publisher;
     }
 
-    public void setPublisher(Publisher publisher) {
+    public void setPublisher(Publisher[] publisher) {
         this.publisher = publisher;
     }
 
@@ -90,11 +91,11 @@ public class Book {
         this.amountOfPages = amountOfPages;
     }
 
-    public double getPriceOfBook() {
+    public BigDecimal getPriceOfBook() {
         return priceOfBook;
     }
 
-    public void setPriceOfBook(double priceOfBook) {
+    public void setPriceOfBook(BigDecimal priceOfBook) {
         this.priceOfBook = priceOfBook;
     }
 

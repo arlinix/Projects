@@ -1,3 +1,3 @@
 public enum CoverType {
-    Paperback, Handcover;
+    PAPERBACK, HARDCOVER;
 }
