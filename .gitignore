@@ -62,6 +62,7 @@ desktop.ini
 # Ignore your Exam-Project directory
 Exam-Project/
 
+online-shop/target/
 # If you want to ignore everything inside but keep the folder itself:
 # Exam-Project/*
 # !Exam-Project/.gitkeep
