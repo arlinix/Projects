@@ -1,0 +1,68 @@
+# ==========================
+# Maven Project Git Ignore
+# ==========================
+
+# Maven target directory (build outputs)
+target/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*.swo
+*.DS_Store
+
+# ==========================
+# IDE Specific
+# ==========================
+
+# IntelliJ IDEA
+.idea/
+*.iml
+out/
+
+# VS Code
+.vscode/
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# NetBeans
+nbproject/private/
+build/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+# ==========================
+# OS Specific
+# ==========================
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# Linux
+*~
+
+# ==========================
+# Custom Directories to Ignore
+# ==========================
+
+# Ignore your Exam-Project directory
+Exam-Project/
+
+# If you want to ignore everything inside but keep the folder itself:
+# Exam-Project/*
+# !Exam-Project/.gitkeep
+
