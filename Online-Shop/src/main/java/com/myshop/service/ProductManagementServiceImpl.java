@@ -9,11 +9,19 @@ import java.util.List;
 public class ProductManagementServiceImpl implements ProductManagementService {
 
     private static ProductManagementServiceImpl instance;
-    private List<Product> products = new ArrayList<>();
+    private List<Product> products;
 
     ProductManagementServiceImpl() {
-        instance = new ProductManagementServiceImpl();
+        products = new ArrayList<>();
         initDefaultProducts();
+    }
+
+    public static ProductManagementServiceImpl getInstance(){
+        if(instance == null){
+            instance = new ProductManagementServiceImpl();
+        }
+        return instance; 
+
     }
 
     private void initDefaultProducts() {
