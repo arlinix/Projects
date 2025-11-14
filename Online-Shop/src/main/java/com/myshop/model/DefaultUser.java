@@ -12,7 +12,8 @@ public class DefaultUser implements User {
         this.id = ++idCounter;
     }
 
-    private static void clearState() {
+    // changing it to public as UserManagementServiceImpl needs access to it
+    public static void clearState() {
         idCounter = 0;
     }
 
