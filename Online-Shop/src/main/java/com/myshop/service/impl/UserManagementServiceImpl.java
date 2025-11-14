@@ -1,13 +1,14 @@
-package com.myshop.service;
+package com.myshop.service.impl;
 
 import com.myshop.model.User;
 import com.myshop.model.DefaultUser;
+import com.myshop.service.UserManagementService;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-public class UserManagementServiceImpl implements UserManagementService{
+public class UserManagementServiceImpl implements UserManagementService {
 
     private static UserManagementServiceImpl instance;
     private final List<User> users;

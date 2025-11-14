@@ -1,7 +1,8 @@
-package com.myshop.service;
+package com.myshop.service.impl;
 
 import com.myshop.model.Product;
 import com.myshop.model.DefaultProduct;
+import com.myshop.service.ProductManagementService;
 
 import java.util.ArrayList;
 import java.util.List;
