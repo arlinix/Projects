@@ -20,7 +20,7 @@ public class ProductManagementServiceImpl implements ProductManagementService {
         if(instance == null){
             instance = new ProductManagementServiceImpl();
         }
-        return instance; 
+        return instance;
 
     }
 
