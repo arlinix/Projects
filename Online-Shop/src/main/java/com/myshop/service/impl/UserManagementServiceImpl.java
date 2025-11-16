@@ -24,26 +24,19 @@ public class UserManagementServiceImpl implements UserManagementService {
         return instance;
     }
 
-
-
     @Override
     public synchronized String registerUser(User user) {
         if(user == null){
             return "You have to input email to register. Please, try one more time";
         }
-
         String email = user.getEmail();
-
         if(email == null || email.trim().isEmpty()){
             return "You have to input email to register. Please, try one more time";
         }
-
         if(getUserByEmail(email) != null){
             return "This email is already used by another user. Please, use another email";
         }
-
-        this.users.add(user);
-
+        users.add(user);
         return "New user is created";
     }
 

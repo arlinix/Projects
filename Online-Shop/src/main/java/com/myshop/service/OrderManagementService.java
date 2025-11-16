@@ -9,5 +9,5 @@ public interface OrderManagementService {
     Order[] getOrdersByUserId(int userId);
 
     Order[] getOrders();
-    public void clearServiceState();
+    void clearServiceState();
 }

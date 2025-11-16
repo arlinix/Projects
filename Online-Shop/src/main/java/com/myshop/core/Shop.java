@@ -64,7 +64,7 @@ public class Shop {
     public String addProductToCart(int productId) {
         Product product = productService.getProductById(productId);
         if (product == null) {
-            return "Invalid product ID";
+            return "Please, enter product ID if you want to add product to cart. Or enter 'checkout' if you want to proceed with checkout. Or enter 'menu' if you want to navigate back to the main menu.";
         }
         Cart cart = context.getSessionCart();
         cart.addProduct(product);
