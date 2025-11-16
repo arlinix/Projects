@@ -2,78 +2,34 @@ package com.myshop.service.impl;
 
 import com.myshop.model.User;
 import com.myshop.model.DefaultUser;
+import com.myshop.repository.UserRepository;
 import com.myshop.service.UserManagementService;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
 
 public class UserManagementServiceImpl implements UserManagementService {
 
-    private static UserManagementServiceImpl instance;
-    private final List<User> users;
+    private final UserRepository userRepository;
 
-    private UserManagementServiceImpl() {
-        users = new ArrayList<>();
+    public UserManagementServiceImpl(UserRepository userRepository) {
+        this.userRepository = userRepository;
     }
-
-    public static synchronized UserManagementServiceImpl getInstance(){
-        if(instance == null){
-            instance = new UserManagementServiceImpl();
-        }
-        return instance;
-    }
-
-
 
     @Override
-    public synchronized String registerUser(User user) {
-        if(user == null){
-            return "You have to input email to register. Please, try one more time";
-        }
-
+    public String registerUser(User user) {
+        if (user == null) return "You have to input email to register. Please, try one more time";
         String email = user.getEmail();
-
-        if(email == null || email.trim().isEmpty()){
-            return "You have to input email to register. Please, try one more time";
-        }
-
-        if(getUserByEmail(email) != null){
-            return "This email is already used by another user. Please, use another email";
-        }
-
-        this.users.add(user);
-
+        if (email == null || email.trim().isEmpty()) return "You have to input email to register. Please, try one more time";
+        if (userRepository.findByEmail(email) != null) return "This email is already used by another user. Please, use another email";
+        userRepository.save(user);
         return "New user is created";
     }
 
-    @Override
-    public User[] getUsers() {
-        return users.toArray(new User[0]);
-    }
+    @Override public User[] getUsers() { return userRepository.findAll(); }
+
+    @Override public User getUserByEmail(String userEmail) { return userRepository.findByEmail(userEmail); }
 
     @Override
-    public User getUserByEmail(String userEmail) {
-        if(userEmail == null){
-            return null;
-        }
-
-        Optional<User> found = users.stream()
-                .filter(u -> userEmail.equalsIgnoreCase(u.getEmail()))
-                .findFirst();
-        return found.orElse(null);
-
-
-    }
-
     public void clearServiceState() {
-        this.users.clear();
-// Reset DefaultUser static counter if implemented
-        try {
-            DefaultUser.clearState();
-        } catch (Throwable ignored) {
-// If DefaultUser.clearState() doesn't exist or fails, ignore - tests should
-// still pass if DefaultUser handles its own reset somewhere else.
-        }
+        userRepository.clear();
+        try { DefaultUser.clearState(); } catch (Throwable ignored) {}
     }
 }

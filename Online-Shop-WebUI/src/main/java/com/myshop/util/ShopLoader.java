@@ -12,29 +12,27 @@ public class ShopLoader {
     private ShopLoader() {}
 
     public static Shop loadShop(ApplicationContext ctx) {
-        // ensure services are reset for a fresh run
-        UserManagementServiceImpl.getInstance().clearServiceState();
-        ProductManagementServiceImpl.getInstance().clearServiceState();
-        OrderManagementServiceImpl.getInstance().clearServiceState();
+        // reset services (clear state)
+        ctx.getUserService().clearServiceState();
+        ctx.getProductService().clearServiceState();
+        ctx.getOrderService().clearServiceState();
 
-        // optionally preload some extra products
-        ProductManagementServiceImpl.getInstance().addProduct(new DefaultProduct(10, "Laptop", "Electronics", 55000));
-        ProductManagementServiceImpl.getInstance().addProduct(new DefaultProduct(11, "Shoes", "Fashion", 2500));
+        // pre-load some extra products via productService (it wraps repo)
+        // cast to impl to access helper addProduct (safe here)
+        if (ctx.getProductService() instanceof ProductManagementServiceImpl) {
+            ((ProductManagementServiceImpl) ctx.getProductService()).addProduct(new DefaultProduct(10, "Laptop", "Electronics", 55000));
+            ((ProductManagementServiceImpl) ctx.getProductService()).addProduct(new DefaultProduct(11, "Shoes", "Fashion", 2500));
+        }
 
-        // create admin user
-        UserManagementServiceImpl.getInstance().registerUser(new com.myshop.model.DefaultUser() {{
+        // create admin user via service
+        ctx.getUserService().registerUser(new com.myshop.model.DefaultUser() {{
             setFirstName("Admin");
             setLastName("User");
             setEmail("admin@gmail.com");
             setPassword("admin123");
         }});
 
-        // build and return the Shop wired with the context
-        return new Shop(
-                ctx.getUserService(),
-                ctx.getProductService(),
-                ctx.getOrderService(),
-                ctx
-        );
+        // build Shop with services + context
+        return new Shop(ctx.getUserService(), ctx.getProductService(), ctx.getOrderService(), ctx);
     }
 }

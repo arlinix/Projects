@@ -1,54 +1,32 @@
 package com.myshop.service.impl;
 
 import com.myshop.model.Product;
+import com.myshop.repository.ProductRepository;
 import com.myshop.model.DefaultProduct;
 import com.myshop.service.ProductManagementService;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class ProductManagementServiceImpl implements ProductManagementService {
 
-    private static ProductManagementServiceImpl instance;
-    private final List<Product> products = new ArrayList<>();
+    private final ProductRepository productRepository;
 
-    ProductManagementServiceImpl() {
-        initDefaultProducts();
+    public ProductManagementServiceImpl(ProductRepository productRepository) {
+        this.productRepository = productRepository;
+        initDefaults();
     }
 
-    public static synchronized ProductManagementServiceImpl getInstance(){
-        if(instance == null){
-            instance = new ProductManagementServiceImpl();
-        }
-        return instance;
+    private void initDefaults() {
+        productRepository.clear();
+        productRepository.save(new DefaultProduct(1, "USB-C Cable", "Electronics", 299.00));
+        productRepository.save(new DefaultProduct(2, "Wireless Mouse", "Electronics", 799.00));
+        productRepository.save(new DefaultProduct(3, "Notebook", "Stationery", 49.50));
     }
 
-    private void initDefaultProducts() {
-        products.clear();
-        products.add(new DefaultProduct(1, "USB-C Cable", "Electronics", 299.00));
-        products.add(new DefaultProduct(2, "Wireless Mouse", "Electronics", 799.00));
-        products.add(new DefaultProduct(3, "Notebook", "Stationery", 49.50));
-    }
+    @Override public Product[] getProducts() { return productRepository.findAll(); }
 
+    @Override public Product getProductById(int productIdToAddToCart) { return productRepository.findById(productIdToAddToCart); }
 
-    @Override
-    public Product[] getProducts() {
-        return products.toArray(new Product[0]);
-    }
+    @Override public void clearServiceState() { initDefaults(); }
 
-    @Override
-    public Product getProductById(int productIdToAddToCart) {
-
-        return products.stream()
-                .filter(p -> p.getId() == productIdToAddToCart)
-                .findFirst().orElse(null);
-    }
-
-    public void clearServiceState(){
-        initDefaultProducts();
-    }
-
-    public void addProduct(Product p) {
-        if (p != null) products.add(p);
-    }
+    // helper allowing loader to add more products
+    public void addProduct(Product p) { productRepository.save(p); }
 }

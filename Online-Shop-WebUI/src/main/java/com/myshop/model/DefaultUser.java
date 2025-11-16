@@ -12,58 +12,16 @@ public class DefaultUser implements User {
         this.id = ++idCounter;
     }
 
-    // changing it to public as UserManagementServiceImpl needs access to it
-    public static void clearState() {
-        idCounter = 0;
-    }
+    public static void clearState() { idCounter = 0; }
 
-    @Override
-    public int getId() {
-        return id;
-    }
-
-    @Override
-    public void setId(int id) {
-        this.id = id;
-    }
-
-    @Override
-    public String getFirstName() {
-        return firstName;
-    }
-
-    @Override
-    public void setFirstName(String firstName) {
-        this.firstName = firstName;
-    }
-
-    @Override
-    public String getLastName() {
-        return lastName;
-    }
-
-    @Override
-    public void setLastName(String lastName) {
-        this.lastName = lastName;
-    }
-
-    @Override
-    public String getPassword() {
-        return password;
-    }
-
-    @Override
-    public void setPassword(String password) {
-        this.password = password;
-    }
-
-    @Override
-    public String getEmail() {
-        return email;
-    }
-
-    @Override
-    public void setEmail(String email) {
-        this.email = email;
-    }
+    @Override public int getId() { return id; }
+    @Override public void setId(int id) { this.id = id; }
+    @Override public String getFirstName() { return firstName; }
+    @Override public void setFirstName(String firstName) { this.firstName = firstName; }
+    @Override public String getLastName() { return lastName; }
+    @Override public void setLastName(String lastName) { this.lastName = lastName; }
+    @Override public String getPassword() { return password; }
+    @Override public void setPassword(String password) { this.password = password; }
+    @Override public String getEmail() { return email; }
+    @Override public void setEmail(String email) { this.email = email; }
 }

@@ -26,7 +26,7 @@ public class Shop {
         this.context = context;
     }
 
-    // ========================= USER REGISTRATION =========================
+    // registration
     public String register(String firstName, String lastName, String email, String password) {
         User user = new com.myshop.model.DefaultUser();
         user.setFirstName(firstName);
@@ -36,7 +36,7 @@ public class Shop {
         return userService.registerUser(user);
     }
 
-    // ========================= LOGIN =========================
+    // login
     public boolean login(String email, String password) {
         User user = userService.getUserByEmail(email);
         if (user != null && user.getPassword().equals(password)) {
@@ -46,66 +46,44 @@ public class Shop {
         return false;
     }
 
-    // ========================= LOGOUT =========================
-    public void logout() {
-        context.setLoggedInUser(null);
-    }
+    // logout
+    public void logout() { context.setLoggedInUser(null); }
 
-    // ========================= PRODUCT CATALOG =========================
-    public Product[] getAllProducts() {
-        return productService.getProducts();
-    }
+    // products
+    public Product[] getAllProducts() { return productService.getProducts(); }
+    public Product getProductById(int id) { return productService.getProductById(id); }
 
-    public Product getProductById(int id) {
-        return productService.getProductById(id);
-    }
-
-    // ========================= ADD TO CART =========================
+    // cart
     public String addProductToCart(int productId) {
         Product product = productService.getProductById(productId);
-        if (product == null) {
-            return "Invalid product ID";
-        }
+        if (product == null) return "Please, enter product ID if you want to add product to cart. Or enter 'checkout' if you want to proceed with checkout. Or enter 'menu' if you want to navigate back to the main menu.";
         Cart cart = context.getSessionCart();
         cart.addProduct(product);
-        return "Product " + product.getProductName() + " has been added to your cart.";
+        return "Product " + product.getProductName() + " has been added to your cart. If you want to add a new product - enter the product id. If you want to proceed with checkout - enter word 'checkout' to console";
     }
 
-    // ========================= PLACE ORDER =========================
+    // place order
     public String placeOrder(String creditCardNumber) {
         Cart cart = context.getSessionCart();
-        if (cart.isEmpty()) {
-            return "Your cart is empty. Please add products first.";
-        }
-        if (context.getLoggedInUser() == null) {
-            return "You are not logged in. Please sign in first.";
-        }
+        if (cart.isEmpty()) return "Your cart is empty. Please, add product to cart first and then proceed with checkout";
+        if (context.getLoggedInUser() == null) return "You are not logged in. Please, sign in or create new account";
 
         DefaultOrder order = new DefaultOrder();
-
-        if (!order.isCreditCardNumberValid(creditCardNumber)) {
-            return "Invalid credit card number. It must contain exactly 16 digits.";
-        }
-
+        if (!order.isCreditCardNumberValid(creditCardNumber)) return "You entered invalid credit card number. Valid credit card should contain 16 digits. Please, try one more time.";
         order.setCreditCardNumber(creditCardNumber);
         order.setCustomerId(context.getLoggedInUser().getId());
         order.setProducts(cart.getProducts());
-
         orderService.addOrder(order);
         cart.clear();
-
-        return "Thanks for your purchase. Order confirmation sent to your email.";
+        return "Thanks a lot for your purchase. Details about order delivery are sent to your email.";
     }
 
-    // ========================= MY ORDERS =========================
     public com.myshop.model.Order[] getMyOrders() {
-        if (context.getLoggedInUser() == null) {
-            return null;
-        }
+        if (context.getLoggedInUser() == null) return null;
         return orderService.getOrdersByUserId(context.getLoggedInUser().getId());
     }
 
-    // ========================= SETTINGS =========================
+    // settings
     public boolean changePassword(String newPassword) {
         User user = context.getLoggedInUser();
         if (user == null) return false;
@@ -120,15 +98,13 @@ public class Shop {
         return true;
     }
 
-    // ========================= TEST SUPPORT =========================
+    // clear state helper
     public void clearState() {
         userService.clearServiceState();
         productService.clearServiceState();
         orderService.clearServiceState();
         com.myshop.model.DefaultUser.clearState();
-        if (context.getSessionCart() != null) {
-            context.getSessionCart().clear();
-        }
+        if (context.getSessionCart() != null) context.getSessionCart().clear();
         context.setLoggedInUser(null);
     }
 }
