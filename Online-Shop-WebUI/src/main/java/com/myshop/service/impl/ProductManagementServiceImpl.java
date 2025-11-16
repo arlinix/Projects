@@ -1,0 +1,54 @@
+package com.myshop.service.impl;
+
+import com.myshop.model.Product;
+import com.myshop.model.DefaultProduct;
+import com.myshop.service.ProductManagementService;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class ProductManagementServiceImpl implements ProductManagementService {
+
+    private static ProductManagementServiceImpl instance;
+    private final List<Product> products = new ArrayList<>();
+
+    ProductManagementServiceImpl() {
+        initDefaultProducts();
+    }
+
+    public static synchronized ProductManagementServiceImpl getInstance(){
+        if(instance == null){
+            instance = new ProductManagementServiceImpl();
+        }
+        return instance;
+    }
+
+    private void initDefaultProducts() {
+        products.clear();
+        products.add(new DefaultProduct(1, "USB-C Cable", "Electronics", 299.00));
+        products.add(new DefaultProduct(2, "Wireless Mouse", "Electronics", 799.00));
+        products.add(new DefaultProduct(3, "Notebook", "Stationery", 49.50));
+    }
+
+
+    @Override
+    public Product[] getProducts() {
+        return products.toArray(new Product[0]);
+    }
+
+    @Override
+    public Product getProductById(int productIdToAddToCart) {
+
+        return products.stream()
+                .filter(p -> p.getId() == productIdToAddToCart)
+                .findFirst().orElse(null);
+    }
+
+    public void clearServiceState(){
+        initDefaultProducts();
+    }
+
+    public void addProduct(Product p) {
+        if (p != null) products.add(p);
+    }
+}
