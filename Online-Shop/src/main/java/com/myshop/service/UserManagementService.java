@@ -8,5 +8,6 @@ public interface UserManagementService {
     User[] getUsers();
 
     User getUserByEmail(String userEmail);
+    public void clearServiceState();
 
 }
