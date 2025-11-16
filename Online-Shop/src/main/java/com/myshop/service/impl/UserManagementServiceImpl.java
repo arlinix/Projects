@@ -17,11 +17,10 @@ public class UserManagementServiceImpl implements UserManagementService {
         users = new ArrayList<>();
     }
 
-    public static UserManagementServiceImpl getInstance(){
+    public static synchronized UserManagementServiceImpl getInstance(){
         if(instance == null){
             instance = new UserManagementServiceImpl();
         }
-
         return instance;
     }
 
@@ -32,6 +31,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         if(user == null){
             return "You have to input email to register. Please, try one more time";
         }
+
         String email = user.getEmail();
 
         if(email == null || email.trim().isEmpty()){

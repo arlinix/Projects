@@ -9,13 +9,11 @@ import java.util.List;
 public class OrderManagementServiceImpl implements OrderManagementService {
 
     private static OrderManagementServiceImpl instance;
-    private List<Order> orders;
+    private final List<Order> orders = new ArrayList<>();
 
-    OrderManagementServiceImpl() {
-        orders = new ArrayList<>();
-    }
+    OrderManagementServiceImpl() {}
 
-    public static OrderManagementServiceImpl getInstance() {
+    public static synchronized OrderManagementServiceImpl getInstance() {
         if (instance == null) {
             instance = new OrderManagementServiceImpl();
         }
@@ -25,10 +23,7 @@ public class OrderManagementServiceImpl implements OrderManagementService {
 
     @Override
     public synchronized void addOrder(Order order) {
-        if (order == null) {
-            return;
-        }
-        this.orders.add(order);
+        if (order != null) orders.add(order);
     }
 
     @Override

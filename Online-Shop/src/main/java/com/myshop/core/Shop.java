@@ -1,43 +1,44 @@
 package com.myshop.core;
 
 import com.myshop.app.ApplicationContext;
+import com.myshop.model.Cart;
 import com.myshop.model.DefaultOrder;
-import com.myshop.model.DefaultUser;
 import com.myshop.model.Product;
+import com.myshop.model.User;
 import com.myshop.service.OrderManagementService;
 import com.myshop.service.ProductManagementService;
 import com.myshop.service.UserManagementService;
-import com.myshop.model.Cart;
 
 public class Shop {
 
     private final UserManagementService userService;
     private final ProductManagementService productService;
     private final OrderManagementService orderService;
-    private final ApplicationContext context = ApplicationContext.getInstance();
+    private final ApplicationContext context;
 
     public Shop(UserManagementService userService,
                 ProductManagementService productService,
-                OrderManagementService orderService) {
+                OrderManagementService orderService,
+                ApplicationContext context) {
         this.userService = userService;
         this.productService = productService;
         this.orderService = orderService;
+        this.context = context;
     }
 
     // ========================= USER REGISTRATION =========================
     public String register(String firstName, String lastName, String email, String password) {
-        DefaultUser user = new DefaultUser();
+        User user = new com.myshop.model.DefaultUser();
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setEmail(email);
         user.setPassword(password);
-
         return userService.registerUser(user);
     }
 
     // ========================= LOGIN =========================
     public boolean login(String email, String password) {
-        var user = userService.getUserByEmail(email);
+        User user = userService.getUserByEmail(email);
         if (user != null && user.getPassword().equals(password)) {
             context.setLoggedInUser(user);
             return true;
@@ -76,7 +77,6 @@ public class Shop {
         if (cart.isEmpty()) {
             return "Your cart is empty. Please add products first.";
         }
-
         if (context.getLoggedInUser() == null) {
             return "You are not logged in. Please sign in first.";
         }
@@ -107,14 +107,14 @@ public class Shop {
 
     // ========================= SETTINGS =========================
     public boolean changePassword(String newPassword) {
-        var user = context.getLoggedInUser();
+        User user = context.getLoggedInUser();
         if (user == null) return false;
         user.setPassword(newPassword);
         return true;
     }
 
     public boolean changeEmail(String newEmail) {
-        var user = context.getLoggedInUser();
+        User user = context.getLoggedInUser();
         if (user == null) return false;
         user.setEmail(newEmail);
         return true;
@@ -125,7 +125,7 @@ public class Shop {
         userService.clearServiceState();
         productService.clearServiceState();
         orderService.clearServiceState();
-        DefaultUser.clearState();
+        com.myshop.model.DefaultUser.clearState();
         if (context.getSessionCart() != null) {
             context.getSessionCart().clear();
         }

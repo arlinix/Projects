@@ -10,19 +10,17 @@ import java.util.List;
 public class ProductManagementServiceImpl implements ProductManagementService {
 
     private static ProductManagementServiceImpl instance;
-    private List<Product> products;
+    private final List<Product> products = new ArrayList<>();
 
     ProductManagementServiceImpl() {
-        products = new ArrayList<>();
         initDefaultProducts();
     }
 
-    public static ProductManagementServiceImpl getInstance(){
+    public static synchronized ProductManagementServiceImpl getInstance(){
         if(instance == null){
             instance = new ProductManagementServiceImpl();
         }
         return instance;
-
     }
 
     private void initDefaultProducts() {
@@ -48,5 +46,9 @@ public class ProductManagementServiceImpl implements ProductManagementService {
 
     public void clearServiceState(){
         initDefaultProducts();
+    }
+
+    public void addProduct(Product p) {
+        if (p != null) products.add(p);
     }
 }

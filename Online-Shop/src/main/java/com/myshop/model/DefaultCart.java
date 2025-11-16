@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class DefaultCart implements Cart {
-    private List<Product> items = new ArrayList<>();
+    private final List<Product> items = new ArrayList<>();
 
     @Override
     public boolean isEmpty() {
