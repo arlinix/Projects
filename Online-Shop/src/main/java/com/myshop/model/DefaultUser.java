@@ -8,7 +8,7 @@ public class DefaultUser implements User {
     private String password;
     private String email;
 
-    DefaultUser() {
+    public DefaultUser() {
         this.id = ++idCounter;
     }
 
