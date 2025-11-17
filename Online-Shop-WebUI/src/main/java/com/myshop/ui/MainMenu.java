@@ -13,6 +13,9 @@ public class MainMenu {
     private final Shop shop = ctx.getShop();
     private final Scanner scanner = ctx.getScanner();
 
+    public MainMenu() throws Exception {
+    }
+
     public void start() {
         boolean running = true;
         while (running) {
@@ -100,7 +103,7 @@ public class MainMenu {
             String input = scanner.nextLine().trim();
             if ("menu".equalsIgnoreCase(input)) return;
             if ("checkout".equalsIgnoreCase(input)) {
-                if (ctx.getSessionCart().isEmpty()) {
+                if (ctx.getSessionCart().isEmpty() && ctx.getLoggedInUser() == null) {
                     System.out.println("Your cart is empty. Please, add product to cart first and then proceed with checkout");
                     continue;
                 }
@@ -117,7 +120,6 @@ public class MainMenu {
                         return;
                     } else {
                         System.out.println(msg);
-                        // loop until valid
                     }
                 }
             }
@@ -176,9 +178,13 @@ public class MainMenu {
 
     private void cmdCustomerList() {
         System.out.println("\n--- Customer List ---");
-        var users = ctx.getUserService().getUsers();
-        for (User u : users) {
-            System.out.printf("ID:%d Name:%s %s Email:%s%n", u.getId(), u.getFirstName(), u.getLastName(), u.getEmail());
+        try {
+            var users = ctx.getUserService().getUsers();
+            for (User u : users) {
+                System.out.printf("ID:%d Name:%s %s Email:%s%n", u.getId(), u.getFirstName(), u.getLastName(), u.getEmail());
+            }
+        } catch (Exception e) {
+            System.out.println("Failed to load users: " + e.getMessage());
         }
     }
 }

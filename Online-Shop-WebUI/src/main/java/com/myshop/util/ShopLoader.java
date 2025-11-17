@@ -12,27 +12,35 @@ public class ShopLoader {
     private ShopLoader() {}
 
     public static Shop loadShop(ApplicationContext ctx) {
-        // reset services (clear state)
-        ctx.getUserService().clearServiceState();
-        ctx.getProductService().clearServiceState();
-        ctx.getOrderService().clearServiceState();
-
-        // pre-load some extra products via productService (it wraps repo)
-        // cast to impl to access helper addProduct (safe here)
-        if (ctx.getProductService() instanceof ProductManagementServiceImpl) {
-            ((ProductManagementServiceImpl) ctx.getProductService()).addProduct(new DefaultProduct(10, "Laptop", "Electronics", 55000));
-            ((ProductManagementServiceImpl) ctx.getProductService()).addProduct(new DefaultProduct(11, "Shoes", "Fashion", 2500));
+        try {
+            ctx.getUserService().clearServiceState();
+            ctx.getProductService().clearServiceState();
+            ctx.getOrderService().clearServiceState();
+        } catch (Exception e) {
+            // ignore
         }
 
-        // create admin user via service
-        ctx.getUserService().registerUser(new com.myshop.model.DefaultUser() {{
-            setFirstName("Admin");
-            setLastName("User");
-            setEmail("admin@gmail.com");
-            setPassword("admin123");
-        }});
+        if (ctx.getProductService() instanceof ProductManagementServiceImpl) {
+            try {
+                ((ProductManagementServiceImpl) ctx.getProductService()).addProduct(new DefaultProduct(10, "Laptop", "Electronics", 55000));
+                ((ProductManagementServiceImpl) ctx.getProductService()).addProduct(new DefaultProduct(11, "Shoes", "Fashion", 2500));
+            } catch (Exception e) {
+                // ignore
+            }
+        }
 
-        // build Shop with services + context
-        return new Shop(ctx.getUserService(), ctx.getProductService(), ctx.getOrderService(), ctx);
+        try {
+            ctx.getUserService().registerUser(new com.myshop.model.DefaultUser() {{
+                setFirstName("Admin");
+                setLastName("User");
+                setEmail("admin@gmail.com");
+                setPassword("admin123");
+            }});
+        } catch (Exception e) {
+            // ignore
+        }
+
+        // create Shop with services + context
+        return new Shop(ctx.getUserService(), ctx.getProductService(), ctx.getOrderService(), new com.myshop.service.OrderService(), ctx);
     }
 }

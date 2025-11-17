@@ -7,9 +7,10 @@ import java.sql.SQLException;
 public class DbConnectionFactory {
 
     // Update these credentials to match your environment
-    private static final String URL = "jdbc:mysql://localhost:3306/myshop?useSSL=false&serverTimezone=UTC";
-    private static final String USER = "myshop_admin";
-    private static final String PASSWORD = "123456";
+    private static final String URL = System.getenv().getOrDefault("MYSHOP_JDBC_URL",
+            "jdbc:mysql://localhost:3306/myshop?useSSL=false&serverTimezone=UTC");
+    private static final String USER = System.getenv().getOrDefault("MYSHOP_DB_USER", "myshop_admin");
+    private static final String PASSWORD = System.getenv().getOrDefault("MYSHOP_DB_PASS", "123456");
 
     static {
         try {
