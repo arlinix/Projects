@@ -1,3 +1,4 @@
+
 package com.myshop.repository.jdbc;
 
 import com.myshop.model.DefaultProduct;
@@ -11,26 +12,24 @@ public class ProductRepositoryJdbcImpl implements ProductRepository {
 
     @Override
     public int save(Connection conn, DefaultProduct product) throws Exception {
-        String sql = "INSERT INTO products(product_name, category_name, price) VALUES (?, ?, ?)";
+        String sql = "INSERT INTO products(product_name, category_name, price, stock_quantity, is_active) VALUES (?,?,?,?,?)";
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, product.getProductName());
             ps.setString(2, product.getCategoryName());
             ps.setDouble(3, product.getPrice());
+            ps.setInt(4, product.getStockQuantity());     // NEW
+            ps.setBoolean(5, product.isActive());         // NEW
             ps.executeUpdate();
             try (ResultSet rs = ps.getGeneratedKeys()) {
-                if (rs.next()) {
-                    int id = rs.getInt(1);
-                    return id;
-                } else {
-                    throw new SQLException("No generated key for product");
-                }
+                if (rs.next()) return rs.getInt(1);
+                throw new SQLException("No generated key for product");
             }
         }
     }
 
     @Override
     public DefaultProduct findById(Connection conn, int id) throws Exception {
-        String sql = "SELECT id, product_name, category_name, price FROM products WHERE id = ?";
+        String sql = "SELECT id, product_name, category_name, price, stock_quantity, is_active FROM products WHERE id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
             try (ResultSet rs = ps.executeQuery()) {
@@ -39,18 +38,40 @@ public class ProductRepositoryJdbcImpl implements ProductRepository {
                             rs.getInt("id"),
                             rs.getString("product_name"),
                             rs.getString("category_name"),
-                            rs.getDouble("price")
+                            rs.getDouble("price"),
+                            rs.getInt("stock_quantity"),
+                            rs.getBoolean("is_active")
                     );
-                } else {
-                    return null;
                 }
+                return null;
             }
         }
     }
 
     @Override
+    public DefaultProduct findByName(Connection conn, String name) throws Exception {
+        String sql = "SELECT id, product_name, category_name, price, stock_quantity, is_active FROM products WHERE product_name = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, name);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new DefaultProduct(
+                            rs.getInt("id"),
+                            rs.getString("product_name"),
+                            rs.getString("category_name"),
+                            rs.getDouble("price"),
+                            rs.getInt("stock_quantity"),
+                            rs.getBoolean("is_active")
+                    );
+                }
+            }
+        }
+        return null;
+    }
+
+    @Override
     public List<DefaultProduct> findAll(Connection conn) throws Exception {
-        String sql = "SELECT id, product_name, category_name, price FROM products";
+        String sql = "SELECT id, product_name, category_name, price, stock_quantity, is_active FROM products";
         List<DefaultProduct> list = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -59,7 +80,9 @@ public class ProductRepositoryJdbcImpl implements ProductRepository {
                         rs.getInt("id"),
                         rs.getString("product_name"),
                         rs.getString("category_name"),
-                        rs.getDouble("price")
+                        rs.getDouble("price"),
+                        rs.getInt("stock_quantity"),
+                        rs.getBoolean("is_active")
                 ));
             }
         }
@@ -68,12 +91,14 @@ public class ProductRepositoryJdbcImpl implements ProductRepository {
 
     @Override
     public boolean update(Connection conn, DefaultProduct product) throws Exception {
-        String sql = "UPDATE products SET product_name=?, category_name=?, price=? WHERE id=?";
+        String sql = "UPDATE products SET product_name=?, category_name=?, price=?, stock_quantity=?, is_active=? WHERE id=?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, product.getProductName());
             ps.setString(2, product.getCategoryName());
             ps.setDouble(3, product.getPrice());
-            ps.setInt(4, product.getId());
+            ps.setInt(4, product.getStockQuantity());
+            ps.setBoolean(5, product.isActive());
+            ps.setInt(6, product.getId());
             return ps.executeUpdate() == 1;
         }
     }

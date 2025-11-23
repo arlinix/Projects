@@ -8,7 +8,7 @@ public class DbConnectionFactory {
 
     // Update these credentials to match your environment
     private static final String URL = System.getenv().getOrDefault("MYSHOP_JDBC_URL",
-            "jdbc:mysql://localhost:3306/myshop?useSSL=false&serverTimezone=UTC");
+            "jdbc:mysql://localhost:3306/myshop?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC");
     private static final String USER = System.getenv().getOrDefault("MYSHOP_DB_USER", "myshop_admin");
     private static final String PASSWORD = System.getenv().getOrDefault("MYSHOP_DB_PASS", "123456");
 

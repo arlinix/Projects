@@ -1,22 +1,25 @@
+
 package com.myshop.ui;
 
 import com.myshop.app.ApplicationContext;
 import com.myshop.core.Shop;
 import com.myshop.model.Product;
 import com.myshop.model.User;
+import com.myshop.model.Role;
+import com.myshop.service.PaymentService;
+import com.myshop.service.impl.PaymentServiceImpl;
 
 import java.util.Scanner;
 
 public class MainMenu {
-
     private final ApplicationContext ctx = ApplicationContext.getInstance();
     private final Shop shop = ctx.getShop();
     private final Scanner scanner = ctx.getScanner();
+    private final PaymentService paymentService = new PaymentServiceImpl();
 
-    public MainMenu() throws Exception {
-    }
+    public MainMenu() throws Exception { }
 
-    public void start() {
+    public void start() throws Exception {
         boolean running = true;
         while (running) {
             printMainMenu();
@@ -32,9 +35,8 @@ public class MainMenu {
                 case "3": cmdProductCatalog(); break;
                 case "4": cmdMyOrders(); break;
                 case "5": cmdSettings(); break;
-                case "6": cmdCustomerList(); break;
-                default:
-                    System.out.println("Only 1, 2, 3, 4, 5 is allowed. Try one more time.");
+                case "6": cmdCustomerList(); break; // restrict inside method
+                default: System.out.println("Only 1, 2, 3, 4, 5, 6 is allowed. Try one more time.");
             }
         }
     }
@@ -48,40 +50,35 @@ public class MainMenu {
         System.out.println("3. Product Catalog");
         System.out.println("4. My Orders");
         System.out.println("5. Settings");
-        System.out.println("6. Customer List");
+        System.out.println("6. Customer List (Admins/Associates)");
         System.out.println("Type 'exit' to close program.");
         System.out.print("Select option: ");
     }
 
-    private void cmdSignUp() {
+    private void cmdSignUp() throws Exception {
         System.out.println("\n--- Sign Up ---");
-        System.out.print("Enter first name: ");
-        String first = scanner.nextLine().trim();
-        System.out.print("Enter last name: ");
-        String last = scanner.nextLine().trim();
-        System.out.print("Enter password: ");
-        String pass = scanner.nextLine().trim();
-        System.out.print("Enter email: ");
-        String email = scanner.nextLine().trim();
-
+        System.out.print("Enter first name: "); String first = scanner.nextLine().trim();
+        System.out.print("Enter last name: ");  String last = scanner.nextLine().trim();
+        System.out.print("Enter password: ");  String pass = scanner.nextLine().trim();
+        System.out.print("Enter email: ");     String email = scanner.nextLine().trim();
         String res = shop.register(first, last, email, pass);
         System.out.println(res);
         if ("New user is created".equals(res)) {
             shop.login(email, pass);
             System.out.println("You are now signed in.");
+            postLoginRoleRouting();
         }
     }
 
-    private void cmdSignInOrOut() {
+    private void cmdSignInOrOut() throws Exception {
         if (ctx.getLoggedInUser() == null) {
             System.out.println("\n--- Sign In ---");
-            System.out.print("Enter email: ");
-            String email = scanner.nextLine().trim();
-            System.out.print("Enter password: ");
-            String pass = scanner.nextLine().trim();
+            System.out.print("Enter email: "); String email = scanner.nextLine().trim();
+            System.out.print("Enter password: "); String pass = scanner.nextLine().trim();
             boolean ok = shop.login(email, pass);
             if (ok) {
                 System.out.println("Glad to see you back " + ctx.getLoggedInUser().getFirstName() + " " + ctx.getLoggedInUser().getLastName());
+                postLoginRoleRouting();
             } else {
                 System.out.println("Unfortunately, such login and password doesn’t exist");
             }
@@ -91,17 +88,27 @@ public class MainMenu {
         }
     }
 
+    private void postLoginRoleRouting() {
+        var u = ctx.getLoggedInUser();
+        if (u == null) return;
+        if (u.getRole() == Role.ADMIN) new AdminMenu(ctx).start();
+        else if (u.getRole() == Role.ASSOCIATE) new AssociateMenu(ctx).start();
+    }
+
+    // unchanged catalog, with stock info shown
     private void cmdProductCatalog() {
         while (true) {
             System.out.println("\n--- Product Catalog ---");
             Product[] products = shop.getAllProducts();
             for (Product p : products) {
+                // DefaultProduct.toString prints stock; for general Product we show basic info
                 System.out.printf("%d) %s (%s) - %.2f%n", p.getId(), p.getProductName(), p.getCategoryName(), p.getPrice());
             }
             System.out.println("Enter product id to add it to the cart or 'checkout' to proceed to checkout or 'menu' to go back to main menu.");
             System.out.print("Your input: ");
             String input = scanner.nextLine().trim();
             if ("menu".equalsIgnoreCase(input)) return;
+
             if ("checkout".equalsIgnoreCase(input)) {
                 if (ctx.getSessionCart().isEmpty() && ctx.getLoggedInUser() == null) {
                     System.out.println("Your cart is empty. Please, add product to cart first and then proceed with checkout");
@@ -156,32 +163,52 @@ public class MainMenu {
         while (true) {
             System.out.println("1. Change Password");
             System.out.println("2. Change Email");
+            System.out.println("3. Manage Payment Method");
             System.out.println("Type 'menu' to go back to main menu");
             System.out.print("Select option: ");
             String opt = scanner.nextLine().trim();
             if ("menu".equalsIgnoreCase(opt)) return;
-            if ("1".equals(opt)) {
-                System.out.print("Enter new password: ");
-                String np = scanner.nextLine().trim();
-                if (shop.changePassword(np)) System.out.println("Your password has been successfully changed");
-                return;
-            } else if ("2".equals(opt)) {
-                System.out.print("Enter new email: ");
-                String ne = scanner.nextLine().trim();
-                if (shop.changeEmail(ne)) System.out.println("Your email has been successfully changed");
-                return;
-            } else {
-                System.out.println("Only 1, 2 is allowed. Try one more time");
+            try {
+                switch (opt) {
+                    case "1" -> {
+                        System.out.print("Enter new password: ");
+                        String np = scanner.nextLine().trim();
+                        if (shop.changePassword(np)) System.out.println("Your password has been successfully changed");
+                        return;
+                    }
+                    case "2" -> {
+                        System.out.print("Enter new email: ");
+                        String ne = scanner.nextLine().trim();
+                        if (shop.changeEmail(ne)) System.out.println("Your email has been successfully changed");
+                        return;
+                    }
+                    case "3" -> {
+                        System.out.print("Brand (e.g., VISA): "); String brand = scanner.nextLine().trim();
+                        System.out.print("Card Number (PAN): ");   String pan = scanner.nextLine().trim();
+                        System.out.print("Exp Month (1..12): ");   int mm = Integer.parseInt(scanner.nextLine().trim());
+                        System.out.print("Exp Year (yyyy): ");     int yy = Integer.parseInt(scanner.nextLine().trim());
+                        int pmId = paymentService.saveOrUpdateDefaultPaymentMethod(ctx.getLoggedInUser().getId(), brand, pan, mm, yy);
+                        System.out.println("Saved default payment method id=" + pmId);
+                        return;
+                    }
+                    default -> System.out.println("Only 1, 2, 3 is allowed. Try one more time");
+                }
+            } catch (Exception e) {
+                System.out.println("Error: " + e.getMessage());
             }
         }
     }
 
     private void cmdCustomerList() {
         System.out.println("\n--- Customer List ---");
+        if (ctx.getLoggedInUser() == null || ctx.getLoggedInUser().getRole() == Role.CUSTOMER) {
+            System.out.println("Access denied: Admins/Associates only.");
+            return;
+        }
         try {
             var users = ctx.getUserService().getUsers();
             for (User u : users) {
-                System.out.printf("ID:%d Name:%s %s Email:%s%n", u.getId(), u.getFirstName(), u.getLastName(), u.getEmail());
+                System.out.printf("ID:%d Role:%s Name:%s %s Email:%s%n", u.getId(), u.getRole(), u.getFirstName(), u.getLastName(), u.getEmail());
             }
         } catch (Exception e) {
             System.out.println("Failed to load users: " + e.getMessage());

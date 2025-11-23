@@ -1,14 +1,12 @@
+
 package com.myshop.util;
 
 import com.myshop.app.ApplicationContext;
 import com.myshop.core.Shop;
 import com.myshop.model.DefaultProduct;
-import com.myshop.service.impl.ProductManagementServiceImpl;
-import com.myshop.service.impl.UserManagementServiceImpl;
-import com.myshop.service.impl.OrderManagementServiceImpl;
+import com.myshop.model.Role;
 
 public class ShopLoader {
-
     private ShopLoader() {}
 
     public static Shop loadShop(ApplicationContext ctx) {
@@ -16,31 +14,22 @@ public class ShopLoader {
             ctx.getUserService().clearServiceState();
             ctx.getProductService().clearServiceState();
             ctx.getOrderService().clearServiceState();
-        } catch (Exception e) {
-            // ignore
-        }
+        } catch (Exception e) { /* ignore */ }
 
-        if (ctx.getProductService() instanceof ProductManagementServiceImpl) {
-            try {
-                ((ProductManagementServiceImpl) ctx.getProductService()).addProduct(new DefaultProduct(10, "Laptop", "Electronics", 55000));
-                ((ProductManagementServiceImpl) ctx.getProductService()).addProduct(new DefaultProduct(11, "Shoes", "Fashion", 2500));
-            } catch (Exception e) {
-                // ignore
-            }
-        }
+        // REMOVE: the unconditional adds of Laptop/Shoes.
+        // Rely on ProductManagementServiceImpl#initDefaults() which seeds only when empty.
 
+        // Seed Admin user with ADMIN role (registerUser will ignore if email exists)
         try {
             ctx.getUserService().registerUser(new com.myshop.model.DefaultUser() {{
                 setFirstName("Admin");
                 setLastName("User");
                 setEmail("admin@gmail.com");
                 setPassword("admin123");
+                setRole(Role.ADMIN);     // NEW: assign admin role
             }});
-        } catch (Exception e) {
-            // ignore
-        }
+        } catch (Exception e) { /* ignore */ }
 
-        // create Shop with services + context
         return new Shop(ctx.getUserService(), ctx.getProductService(), ctx.getOrderService(), new com.myshop.service.OrderService(), ctx);
     }
 }

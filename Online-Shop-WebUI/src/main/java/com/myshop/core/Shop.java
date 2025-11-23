@@ -17,6 +17,7 @@ import com.myshop.service.OrderManagementService;
 import com.myshop.service.ProductManagementService;
 import com.myshop.service.UserManagementService;
 import com.myshop.service.OrderService;
+import org.mindrot.jbcrypt.BCrypt;
 
 import java.sql.Connection;
 
@@ -55,20 +56,28 @@ public class Shop {
     }
 
     // login
-    public boolean login(String email, String password) {
-        try {
-            User user = userService.getUserByEmail(email);
-            if (user != null && user.getPassword().equals(password)) {
-                context.setLoggedInUser(user);
-                // if user logs in, migrate session cart items into DB (optional)
-                migrateSessionCartToDb(user.getId());
-                return true;
-            }
-        } catch (Exception e) {
-            // log
+
+
+        public boolean login(String email, String password) throws Exception{
+            try {
+                User user = userService.getUserByEmail(email);
+                if (user == null) return false;
+
+                try (Connection conn = DbConnectionFactory.getConnection()) {
+                    // fetch stored hash for this user id
+                    String hash = ((UserRepositoryJdbcImpl) new UserRepositoryJdbcImpl())
+                            .getPasswordHashById(conn, user.getId()); // add helper below
+                    if (hash != null && BCrypt.checkpw(password, hash)) {
+                        context.setLoggedInUser(user);
+                        migrateSessionCartToDb(user.getId());
+                        return true;
+                    }
+                }
+            } catch (Exception e) { /* log */ }
+            return false;
         }
-        return false;
-    }
+
+
 
     private void migrateSessionCartToDb(int userId) {
         try (Connection conn = DbConnectionFactory.getConnection()) {
