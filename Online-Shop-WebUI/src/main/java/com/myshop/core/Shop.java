@@ -58,25 +58,30 @@ public class Shop {
     // login
 
 
-        public boolean login(String email, String password) throws Exception{
-            try {
-                User user = userService.getUserByEmail(email);
-                if (user == null) return false;
+    public boolean login(String email, String password) {
 
-                try (Connection conn = DbConnectionFactory.getConnection()) {
-                    // fetch stored hash for this user id
-                    String hash = ((UserRepositoryJdbcImpl) new UserRepositoryJdbcImpl())
-                            .getPasswordHashById(conn, user.getId()); // add helper below
-                    if (hash != null && BCrypt.checkpw(password, hash)) {
-                        context.setLoggedInUser(user);
-                        migrateSessionCartToDb(user.getId());
-                        return true;
-                    }
+        try {
+            var user = userService.getUserByEmail(email);
+            if (user == null) return false;
+
+            try (Connection conn = DbConnectionFactory.getConnection()) {
+                var ur = new UserRepositoryJdbcImpl();
+                String hash = ur.getPasswordHashById(conn, user.getId());
+
+                // TEMP DEBUG (remove after success)
+                System.out.println("DEBUG storedHash=" + hash);
+                System.out.println("DEBUG len=" + (hash == null ? 0 : hash.length()));
+
+                if (hash != null && BCrypt.checkpw(password, hash)) {
+                    context.setLoggedInUser(user);
+                    migrateSessionCartToDb(user.getId());
+                    return true;
                 }
-            } catch (Exception e) { /* log */ }
-            return false;
-        }
+            }
+        } catch (Exception e) { /* log */ }
+        return false;
 
+    }
 
 
     private void migrateSessionCartToDb(int userId) {
@@ -94,16 +99,24 @@ public class Shop {
     }
 
     // logout
-    public void logout() { context.setLoggedInUser(null); }
+    public void logout() {
+        context.setLoggedInUser(null);
+    }
 
     // products
-    public Product[] getAllProducts() { return productService.getProducts(); }
-    public Product getProductById(int id) { return productService.getProductById(id); }
+    public Product[] getAllProducts() {
+        return productService.getProducts();
+    }
+
+    public Product getProductById(int id) {
+        return productService.getProductById(id);
+    }
 
     // cart
     public String addProductToCart(int productId) {
         Product product = productService.getProductById(productId);
-        if (product == null) return "Please, enter product ID if you want to add product to cart. Or enter 'checkout' if you want to proceed with checkout. Or enter 'menu' if you want to navigate back to the main menu.";
+        if (product == null)
+            return "Please, enter product ID if you want to add product to cart. Or enter 'checkout' if you want to proceed with checkout. Or enter 'menu' if you want to navigate back to the main menu.";
         if (context.getLoggedInUser() == null) {
             // anonymous session cart
             Cart cart = context.getSessionCart();

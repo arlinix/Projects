@@ -14,8 +14,10 @@ public class OrderRepositoryJdbcImpl implements OrderRepository {
     @Override
     public int saveOrder(Connection conn, int userId, double totalPrice, String creditCardNumber) throws Exception {
         // Do NOT store raw PAN; set NULL (or masked token if you later decide)
-        String sql = "INSERT INTO orders(user_id, total_price, credit_card_number) VALUES (?,?, NULL)";
-        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        String sql = "INSERT INTO orders(user_id, total_price) " +
+                "VALUES (?,?)";
+        try (PreparedStatement ps = conn.prepareStatement
+                (sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setInt(1, userId);
             ps.setDouble(2, totalPrice);
             ps.executeUpdate();

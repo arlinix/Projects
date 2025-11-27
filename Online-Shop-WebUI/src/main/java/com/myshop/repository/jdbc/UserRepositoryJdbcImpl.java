@@ -1,4 +1,5 @@
 
+// com/myshop/repository/jdbc/UserRepositoryJdbcImpl.java
 package com.myshop.repository.jdbc;
 
 import com.myshop.model.DefaultUser;
@@ -14,14 +15,14 @@ public class UserRepositoryJdbcImpl implements UserRepository {
 
     @Override
     public int save(Connection conn, DefaultUser user) throws Exception {
-        String sql = "INSERT INTO users(first_name, last_name, password, email, role, password_hash) VALUES (?,?,?,?,?,?)";
+        // NOTE: no 'password' column here anymore
+        String sql = "INSERT INTO users(first_name, last_name, email, role, password_hash, is_active) VALUES (?,?,?,?,?,1)";
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, user.getFirstName());
             ps.setString(2, user.getLastName());
-            ps.setString(3, ""); // plaintext no longer used
-            ps.setString(4, user.getEmail());
-            ps.setString(5, user.getRole() == null ? Role.CUSTOMER.name() : user.getRole().name());
-            ps.setString(6, BCrypt.hashpw(user.getPassword(), BCrypt.gensalt()));
+            ps.setString(3, user.getEmail());
+            ps.setString(4, user.getRole() == null ? Role.CUSTOMER.name() : user.getRole().name());
+            ps.setString(5, BCrypt.hashpw(user.getPassword(), BCrypt.gensalt()));
             ps.executeUpdate();
             try (ResultSet rs = ps.getGeneratedKeys()) {
                 if (rs.next()) {
@@ -34,18 +35,9 @@ public class UserRepositoryJdbcImpl implements UserRepository {
         }
     }
 
-
-    public String getPasswordHashById(Connection conn, int id) throws Exception {
-        try (PreparedStatement ps = conn.prepareStatement("SELECT password_hash FROM users WHERE id=?")) {
-            ps.setInt(1, id);
-            try (ResultSet rs = ps.executeQuery()) { if (rs.next()) return rs.getString(1); }
-        }
-        return null;
-    }
-
     @Override
     public DefaultUser findById(Connection conn, int id) throws Exception {
-        String sql = "SELECT id, first_name, last_name, email, role, password_hash FROM users WHERE id = ?";
+        String sql = "SELECT id, first_name, last_name, email, role FROM users WHERE id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
             try (ResultSet rs = ps.executeQuery()) {
@@ -57,7 +49,7 @@ public class UserRepositoryJdbcImpl implements UserRepository {
 
     @Override
     public DefaultUser findByEmail(Connection conn, String email) throws Exception {
-        String sql = "SELECT id, first_name, last_name, email, role, password_hash FROM users WHERE email = ?";
+        String sql = "SELECT id, first_name, last_name, email, role FROM users WHERE email = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, email);
             try (ResultSet rs = ps.executeQuery()) {
@@ -69,7 +61,7 @@ public class UserRepositoryJdbcImpl implements UserRepository {
 
     @Override
     public List<DefaultUser> findAll(Connection conn) throws Exception {
-        String sql = "SELECT id, first_name, last_name, email, role, password_hash FROM users";
+        String sql = "SELECT id, first_name, last_name, email, role FROM users";
         List<DefaultUser> list = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -80,18 +72,20 @@ public class UserRepositoryJdbcImpl implements UserRepository {
 
     @Override
     public boolean update(Connection conn, DefaultUser user) throws Exception {
-        String sql = "UPDATE users SET first_name=?, last_name=?, password=?, email=?, role=?, password_hash=? WHERE id=?";
+        // If password is provided, re-hash; otherwise leave the existing hash
+        String sql = "UPDATE users SET first_name=?, last_name=?, email=?, role=?, password_hash=? WHERE id=?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, user.getFirstName());
             ps.setString(2, user.getLastName());
-            ps.setString(3, ""); // plaintext no longer used
-            ps.setString(4, user.getEmail());
-            ps.setString(5, user.getRole() == null ? Role.CUSTOMER.name() : user.getRole().name());
-            String hash = user.getPassword() != null && !user.getPassword().isEmpty()
+            ps.setString(3, user.getEmail());
+            ps.setString(4, user.getRole() == null ? Role.CUSTOMER.name() : user.getRole().name());
+
+            String hash = (user.getPassword()!=null && !user.getPassword().isEmpty())
                     ? BCrypt.hashpw(user.getPassword(), BCrypt.gensalt())
-                    : getExistingHash(conn, user.getId());
-            ps.setString(6, hash);
-            ps.setInt(7, user.getId());
+                    : getPasswordHashById(conn, user.getId());
+            ps.setString(5, hash);
+
+            ps.setInt(6, user.getId());
             return ps.executeUpdate() == 1;
         }
     }
@@ -105,7 +99,8 @@ public class UserRepositoryJdbcImpl implements UserRepository {
         }
     }
 
-    // Helpers
+    // --- Helpers ---
+
     private DefaultUser mapUser(ResultSet rs) throws Exception {
         DefaultUser u = new DefaultUser();
         u.setId(rs.getInt("id"));
@@ -117,7 +112,7 @@ public class UserRepositoryJdbcImpl implements UserRepository {
         return u;
     }
 
-    private String getExistingHash(Connection conn, int id) throws Exception {
+    public String getPasswordHashById(Connection conn, int id) throws Exception {
         try (PreparedStatement ps = conn.prepareStatement("SELECT password_hash FROM users WHERE id=?")) {
             ps.setInt(1, id);
             try (ResultSet rs = ps.executeQuery()) {

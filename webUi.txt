@@ -108,6 +108,7 @@ import com.myshop.service.OrderManagementService;
 import com.myshop.service.ProductManagementService;
 import com.myshop.service.UserManagementService;
 import com.myshop.service.OrderService;
+import org.mindrot.jbcrypt.BCrypt;
 
 import java.sql.Connection;
 
@@ -146,20 +147,33 @@ public class Shop {
     }
 
     // login
+
+
     public boolean login(String email, String password) {
+
         try {
-            User user = userService.getUserByEmail(email);
-            if (user != null && user.getPassword().equals(password)) {
-                context.setLoggedInUser(user);
-                // if user logs in, migrate session cart items into DB (optional)
-                migrateSessionCartToDb(user.getId());
-                return true;
+            var user = userService.getUserByEmail(email);
+            if (user == null) return false;
+
+            try (Connection conn = DbConnectionFactory.getConnection()) {
+                var ur = new UserRepositoryJdbcImpl();
+                String hash = ur.getPasswordHashById(conn, user.getId());
+
+                // TEMP DEBUG (remove after success)
+                System.out.println("DEBUG storedHash=" + hash);
+                System.out.println("DEBUG len=" + (hash == null ? 0 : hash.length()));
+
+                if (hash != null && BCrypt.checkpw(password, hash)) {
+                    context.setLoggedInUser(user);
+                    migrateSessionCartToDb(user.getId());
+                    return true;
+                }
             }
-        } catch (Exception e) {
-            // log
-        }
+        } catch (Exception e) { /* log */ }
         return false;
+
     }
+
 
     private void migrateSessionCartToDb(int userId) {
         try (Connection conn = DbConnectionFactory.getConnection()) {
@@ -176,16 +190,24 @@ public class Shop {
     }
 
     // logout
-    public void logout() { context.setLoggedInUser(null); }
+    public void logout() {
+        context.setLoggedInUser(null);
+    }
 
     // products
-    public Product[] getAllProducts() { return productService.getProducts(); }
-    public Product getProductById(int id) { return productService.getProductById(id); }
+    public Product[] getAllProducts() {
+        return productService.getProducts();
+    }
+
+    public Product getProductById(int id) {
+        return productService.getProductById(id);
+    }
 
     // cart
     public String addProductToCart(int productId) {
         Product product = productService.getProductById(productId);
-        if (product == null) return "Please, enter product ID if you want to add product to cart. Or enter 'checkout' if you want to proceed with checkout. Or enter 'menu' if you want to navigate back to the main menu.";
+        if (product == null)
+            return "Please, enter product ID if you want to add product to cart. Or enter 'checkout' if you want to proceed with checkout. Or enter 'menu' if you want to navigate back to the main menu.";
         if (context.getLoggedInUser() == null) {
             // anonymous session cart
             Cart cart = context.getSessionCart();
@@ -269,7 +291,7 @@ public class DbConnectionFactory {
 
     // Update these credentials to match your environment
     private static final String URL = System.getenv().getOrDefault("MYSHOP_JDBC_URL",
-            "jdbc:mysql://localhost:3306/myshop?useSSL=false&serverTimezone=UTC");
+            "jdbc:mysql://localhost:3306/myshop?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC");
     private static final String USER = System.getenv().getOrDefault("MYSHOP_DB_USER", "myshop_admin");
     private static final String PASSWORD = System.getenv().getOrDefault("MYSHOP_DB_PASS", "123456");
 
@@ -295,11 +317,13 @@ package com.myshop;
 
 import com.myshop.app.ApplicationContext;
 import com.myshop.ui.MainMenu;
+import org.mindrot.jbcrypt.BCrypt;
 
 public class Main {
     public static void main(String[] args) throws Exception {
         ApplicationContext ctx = ApplicationContext.getInstance();
         MainMenu menu = new MainMenu();
+        System.out.println(org.mindrot.jbcrypt.BCrypt.hashpw("admin123", org.mindrot.jbcrypt.BCrypt.gensalt()));
         menu.start();
     }
 }
@@ -358,6 +382,7 @@ public class DefaultOrder implements Order {
         return "Order{customerId=" + customerId + ", products=" + Arrays.toString(products) + "}";
     }
 }
+
 package com.myshop.model;
 
 public class DefaultProduct implements Product {
@@ -365,19 +390,38 @@ public class DefaultProduct implements Product {
     private final String productName;
     private final String categoryName;
     private final double price;
+    private final int stockQuantity;     // NEW
+    private final boolean active;        // NEW
 
     public DefaultProduct(int id, String productName, String categoryName, double price) {
+        this(id, productName, categoryName, price, 0, true);
+    }
+
+    public DefaultProduct(int id, String productName, String categoryName, double price, int stockQuantity, boolean active) {
         this.id = id;
         this.productName = productName;
         this.categoryName = categoryName;
         this.price = price;
+        this.stockQuantity = stockQuantity;
+        this.active = active;
     }
 
     @Override public int getId() { return id; }
     @Override public String getProductName() { return productName; }
     @Override public String getCategoryName() { return categoryName; }
     @Override public double getPrice() { return price; }
+
+    // Extra getters for admin screens
+    public int getStockQuantity() { return stockQuantity; }
+    public boolean isActive() { return active; }
+
+    @Override
+    public String toString() {
+        return String.format("Product{id=%d, name=%s, cat=%s, price=%.2f, stock=%d, active=%s}",
+                id, productName, categoryName, price, stockQuantity, active);
+    }
 }
+
 package com.myshop.model;
 
 public class DefaultUser implements User {
@@ -387,11 +431,9 @@ public class DefaultUser implements User {
     private String lastName;
     private String password;
     private String email;
+    private Role role = Role.CUSTOMER; // default
 
-    public DefaultUser() {
-        this.id = ++idCounter;
-    }
-
+    public DefaultUser() { this.id = ++idCounter; }
     public static void clearState() { idCounter = 0; }
 
     @Override public int getId() { return id; }
@@ -404,6 +446,36 @@ public class DefaultUser implements User {
     @Override public void setPassword(String password) { this.password = password; }
     @Override public String getEmail() { return email; }
     @Override public void setEmail(String email) { this.email = email; }
+
+    @Override public Role getRole() { return role; }
+    @Override public void setRole(Role role) { this.role = role; }
+}
+
+package com.myshop.model;
+
+import java.time.Instant;
+
+public class Notification {
+    private int id;
+    private int userId;
+    private String message;
+    private Instant createdAt;
+    private boolean read;
+
+    public int getId() { return id; }
+    public void setId(int id) { this.id = id; }
+
+    public int getUserId() { return userId; }
+    public void setUserId(int userId) { this.userId = userId; }
+
+    public String getMessage() { return message; }
+    public void setMessage(String message) { this.message = message; }
+
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+
+    public boolean isRead() { return read; }
+    public void setRead(boolean read) { this.read = read; }
 }
 package com.myshop.model;
 
@@ -416,6 +488,56 @@ public interface Order {
     int getCustomerId();
 
 }
+
+package com.myshop.model;
+
+import java.time.YearMonth;
+
+public class PaymentMethod {
+    private int id;
+    private int userId;
+    private String brand;     // e.g., VISA/MC
+    private String last4;     // masked
+    private int expMonth;     // 1..12
+    private int expYear;      // yyyy
+    private String token;     // opaque (never PAN)
+    private boolean isDefault;
+
+    public int getId() { return id; }
+    public void setId(int id) { this.id = id; }
+
+    public int getUserId() { return userId; }
+    public void setUserId(int userId) { this.userId = userId; }
+
+    public String getBrand() { return brand; }
+    public void setBrand(String brand) { this.brand = brand; }
+
+    public String getLast4() { return last4; }
+    public void setLast4(String last4) { this.last4 = last4; }
+
+    public int getExpMonth() { return expMonth; }
+    public void setExpMonth(int expMonth) { this.expMonth = expMonth; }
+
+    public int getExpYear() { return expYear; }
+    public void setExpYear(int expYear) { this.expYear = expYear; }
+
+    public String getToken() { return token; }
+    public void setToken(String token) { this.token = token; }
+
+    public boolean isDefault() { return isDefault; }
+    public void setDefault(boolean aDefault) { isDefault = aDefault; }
+
+    public boolean isExpired() {
+        YearMonth ym = YearMonth.of(expYear, expMonth);
+        return ym.isBefore(YearMonth.now());
+    }
+
+    @Override
+    public String toString() {
+        return "PaymentMethod{brand=" + brand + ", last4=**** **** **** " + last4 +
+               ", exp=" + expMonth + "/" + expYear + ", default=" + isDefault + "}";
+    }
+}
 package com.myshop.model;
 
 public interface Product{
@@ -426,19 +548,23 @@ public interface Product{
     double getPrice();
 
 }
+
+package com.myshop.model;
+
+public enum Role {
+    ADMIN, ASSOCIATE, CUSTOMER
+}
+
 package com.myshop.model;
 
 public interface User {
-    int getId();
-    void setId(int id);
-    String getFirstName();
-    void setFirstName(String firstName);
-    String getLastName();
-    void setLastName(String lastName);
-    String getPassword();
-    void setPassword(String password);
-    String getEmail();
-    void setEmail(String email);
+    int getId(); void setId(int id);
+    String getFirstName(); void setFirstName(String firstName);
+    String getLastName();  void setLastName(String lastName);
+    String getPassword();  void setPassword(String password);   // legacy setter (repo hashes)
+    String getEmail();     void setEmail(String email);
+
+    Role getRole();        void setRole(Role role);              // NEW
 }
 package com.myshop.repository;
 
@@ -583,6 +709,64 @@ public class CartRepositoryJdbcImpl implements com.myshop.repository.CartReposit
         }
     }
 }
+
+package com.myshop.repository.jdbc;
+
+import com.myshop.model.Notification;
+import com.myshop.repository.NotificationRepository;
+
+import java.sql.*;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+
+public class NotificationRepositoryJdbcImpl implements NotificationRepository {
+    @Override
+    public int add(Connection conn, Notification n) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+            "INSERT INTO notifications(user_id, message) VALUES(?, ?)",
+            Statement.RETURN_GENERATED_KEYS)) {
+            ps.setInt(1, n.getUserId());
+            ps.setString(2, n.getMessage());
+            ps.executeUpdate();
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                if (rs.next()) return rs.getInt(1);
+            }
+        }
+        throw new SQLException("Failed to insert notification");
+    }
+
+    @Override
+    public List<Notification> listUnreadByUser(Connection conn, int userId) throws Exception {
+        List<Notification> out = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(
+            "SELECT id, message, created_at FROM notifications WHERE user_id=? AND is_read=0 ORDER BY created_at DESC")) {
+            ps.setInt(1, userId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Notification n = new Notification();
+                    n.setId(rs.getInt("id"));
+                    n.setUserId(userId);
+                    n.setMessage(rs.getString("message"));
+                    n.setCreatedAt(rs.getTimestamp("created_at").toInstant());
+                    n.setRead(false);
+                    out.add(n);
+                }
+            }
+        }
+        return out;
+    }
+
+    @Override
+    public int markAllRead(Connection conn, int userId) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+            "UPDATE notifications SET is_read=1 WHERE user_id=?")) {
+            ps.setInt(1, userId);
+            return ps.executeUpdate();
+        }
+    }
+}
+
 package com.myshop.repository.jdbc;
 
 import com.myshop.model.DefaultOrder;
@@ -597,25 +781,24 @@ public class OrderRepositoryJdbcImpl implements OrderRepository {
 
     @Override
     public int saveOrder(Connection conn, int userId, double totalPrice, String creditCardNumber) throws Exception {
-        String sql = "INSERT INTO orders(user_id, total_price, credit_card_number) VALUES (?, ?, ?)";
-        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        // Do NOT store raw PAN; set NULL (or masked token if you later decide)
+        String sql = "INSERT INTO orders(user_id, total_price) " +
+                "VALUES (?,?)";
+        try (PreparedStatement ps = conn.prepareStatement
+                (sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setInt(1, userId);
             ps.setDouble(2, totalPrice);
-            ps.setString(3, creditCardNumber);
             ps.executeUpdate();
             try (ResultSet rs = ps.getGeneratedKeys()) {
-                if (rs.next()) {
-                    return rs.getInt(1);
-                } else {
-                    throw new Exception("Failed to generate order id");
-                }
+                if (rs.next()) return rs.getInt(1);
+                throw new Exception("Failed to generate order id");
             }
         }
     }
 
     @Override
     public void saveOrderItems(Connection conn, int orderId, List<OrderItem> items) throws Exception {
-        String sql = "INSERT INTO order_items(order_id, product_id, quantity) VALUES (?, ?, ?)";
+        String sql = "INSERT INTO order_items(order_id, product_id, quantity) VALUES (?,?,?)";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             for (OrderItem it : items) {
                 ps.setInt(1, orderId);
@@ -629,50 +812,209 @@ public class OrderRepositoryJdbcImpl implements OrderRepository {
 
     @Override
     public List<DefaultOrder> findOrdersByUserId(Connection conn, int userId) throws Exception {
-        String sql = "SELECT o.id AS oid, o.total_price, o.credit_card_number, oi.product_id, oi.quantity, p.product_name, p.category_name, p.price " +
+        String sql = "SELECT o.id AS oid, o.total_price, o.status, oi.product_id, oi.quantity, p.product_name, p.category_name, p.price " +
                 "FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id " +
                 "WHERE o.user_id = ? ORDER BY o.order_time DESC";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, userId);
             try (ResultSet rs = ps.executeQuery()) {
-                List<DefaultOrder> result = new ArrayList<>();
-                int currentOrderId = -1;
-                DefaultOrder current = null;
-                List<DefaultProduct> products = null;
-                while (rs.next()) {
-                    int oid = rs.getInt("oid");
-                    if (oid != currentOrderId) {
-                        // finish previous
-                        if (current != null) {
-                            current.setProducts(products.toArray(new com.myshop.model.Product[0]));
-                            result.add(current);
-                        }
-                        currentOrderId = oid;
-                        current = new DefaultOrder();
-                        current.setCustomerId(userId);
-                        // credit card not set for security in toString, but we set it
-                        current.setCreditCardNumber(rs.getString("credit_card_number"));
-                        products = new ArrayList<>();
+                return mapOrders(rs, userId);
+            }
+        }
+    }
+
+    @Override
+    public List<DefaultOrder> findAll(Connection conn) throws Exception {
+        String sql = "SELECT o.id AS oid, o.user_id, o.total_price, o.status, oi.product_id, oi.quantity, p.product_name, p.category_name, p.price " +
+                "FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id " +
+                "ORDER BY o.order_time DESC";
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            List<DefaultOrder> result = new ArrayList<>();
+            int currentOrderId = -1;
+            DefaultOrder current = null;
+            List<DefaultProduct> products = null;
+            int currentUserId = -1;
+            while (rs.next()) {
+                int oid = rs.getInt("oid");
+                if (oid != currentOrderId) {
+                    if (current != null) {
+                        current.setProducts(products.toArray(new com.myshop.model.Product[0]));
+                        result.add(current);
                     }
-                    DefaultProduct p = new DefaultProduct(
-                            rs.getInt("product_id"),
-                            rs.getString("product_name"),
-                            rs.getString("category_name"),
-                            rs.getDouble("price")
-                    );
-                    // quantity is ignored in DefaultProduct; we'll add product multiple times
-                    int qty = rs.getInt("quantity");
-                    for (int i = 0; i < qty; i++) products.add(p);
+                    currentOrderId = oid;
+                    currentUserId = rs.getInt("user_id");
+                    current = new DefaultOrder();
+                    current.setCustomerId(currentUserId);
+                    // status could be stored inside DefaultOrder via toString or an extension (left minimal)
+                    products = new ArrayList<>();
                 }
+                DefaultProduct p = new DefaultProduct(
+                        rs.getInt("product_id"),
+                        rs.getString("product_name"),
+                        rs.getString("category_name"),
+                        rs.getDouble("price"),
+                        0, true
+                );
+                int qty = rs.getInt("quantity");
+                for (int i = 0; i < qty; i++) products.add(p);
+            }
+            if (current != null) {
+                current.setProducts(products.toArray(new com.myshop.model.Product[0]));
+                result.add(current);
+            }
+            return result;
+        }
+    }
+
+    @Override
+    public boolean updateOrderStatus(Connection conn, int orderId, String newStatus, Integer actorUserId, String reason) throws Exception {
+        String sql = "UPDATE orders SET status=?, processed_by=IF(? IS NULL, processed_by, ?), " +
+                "cancelled_by=IF(? IS NULL, cancelled_by, ?), cancellation_reason=?, updated_at=NOW() WHERE id=?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, newStatus);
+            ps.setObject(2, actorUserId);
+            ps.setObject(3, actorUserId);
+            ps.setObject(4, actorUserId);
+            ps.setObject(5, actorUserId);
+            ps.setString(6, reason);
+            ps.setInt(7, orderId);
+            return ps.executeUpdate() == 1;
+        }
+    }
+
+    @Override
+    public List<OrderItem> getOrderItems(Connection conn, int orderId) throws Exception {
+        String sql = "SELECT product_id, quantity FROM order_items WHERE order_id=?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, orderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<OrderItem> items = new ArrayList<>();
+                while (rs.next()) items.add(new OrderItem(rs.getInt(1), rs.getInt(2)));
+                return items;
+            }
+        }
+    }
+
+    // Helper mapper (similar to your existing code)
+    private List<DefaultOrder> mapOrders(ResultSet rs, int userId) throws Exception {
+        List<DefaultOrder> result = new ArrayList<>();
+        int currentOrderId = -1;
+        DefaultOrder current = null;
+        List<DefaultProduct> products = null;
+        while (rs.next()) {
+            int oid = rs.getInt("oid");
+            if (oid != currentOrderId) {
                 if (current != null) {
                     current.setProducts(products.toArray(new com.myshop.model.Product[0]));
                     result.add(current);
                 }
-                return result;
+                currentOrderId = oid;
+                current = new DefaultOrder();
+                current.setCustomerId(userId);
+                products = new ArrayList<>();
+            }
+            DefaultProduct p = new DefaultProduct(
+                    rs.getInt("product_id"),
+                    rs.getString("product_name"),
+                    rs.getString("category_name"),
+                    rs.getDouble("price"),
+                    0, true
+            );
+            int qty = rs.getInt("quantity");
+            for (int i = 0; i < qty; i++) products.add(p);
+        }
+        if (current != null) {
+            current.setProducts(products.toArray(new com.myshop.model.Product[0]));
+            result.add(current);
+        }
+        return result;
+    }
+}
+
+package com.myshop.repository.jdbc;
+
+import com.myshop.model.PaymentMethod;
+import com.myshop.repository.PaymentMethodRepository;
+
+import java.sql.*;
+
+public class PaymentMethodRepositoryJdbcImpl implements PaymentMethodRepository {
+    @Override
+    public int upsertDefault(Connection conn, PaymentMethod pm) throws Exception {
+        // Clear old defaults
+        try (PreparedStatement ps = conn.prepareStatement(
+            "UPDATE payment_methods SET is_default=0 WHERE user_id=?")) {
+            ps.setInt(1, pm.getUserId());
+            ps.executeUpdate();
+        }
+
+        // Try find by token for user
+        Integer existingId = null;
+        try (PreparedStatement ps = conn.prepareStatement(
+            "SELECT id FROM payment_methods WHERE user_id=? AND token=?")) {
+            ps.setInt(1, pm.getUserId());
+            ps.setString(2, pm.getToken());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) existingId = rs.getInt(1);
             }
         }
+
+        if (existingId != null) {
+            try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE payment_methods SET brand=?, last4=?, exp_month=?, exp_year=?, is_default=1 WHERE id=?")) {
+                ps.setString(1, pm.getBrand());
+                ps.setString(2, pm.getLast4());
+                ps.setInt(3, pm.getExpMonth());
+                ps.setInt(4, pm.getExpYear());
+                ps.setInt(5, existingId);
+                ps.executeUpdate();
+            }
+            return existingId;
+        } else {
+            try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO payment_methods(user_id, brand, last4, exp_month, exp_year, token, is_default) VALUES(?,?,?,?,?,?,1)",
+                Statement.RETURN_GENERATED_KEYS)) {
+                ps.setInt(1, pm.getUserId());
+                ps.setString(2, pm.getBrand());
+                ps.setString(3, pm.getLast4());
+                ps.setInt(4, pm.getExpMonth());
+                ps.setInt(5, pm.getExpYear());
+                ps.setString(6, pm.getToken());
+                ps.executeUpdate();
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) return rs.getInt(1);
+                }
+            }
+        }
+        throw new SQLException("Failed to upsert payment method");
     }
-}package com.myshop.repository.jdbc;
+
+    @Override
+    public PaymentMethod findDefaultByUserId(Connection conn, int userId) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+            "SELECT id, brand, last4, exp_month, exp_year, token FROM payment_methods WHERE user_id=? AND is_default=1")) {
+            ps.setInt(1, userId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    PaymentMethod pm = new PaymentMethod();
+                    pm.setId(rs.getInt("id"));
+                    pm.setUserId(userId);
+                    pm.setBrand(rs.getString("brand"));
+                    pm.setLast4(rs.getString("last4"));
+                    pm.setExpMonth(rs.getInt("exp_month"));
+                    pm.setExpYear(rs.getInt("exp_year"));
+                    pm.setToken(rs.getString("token"));
+                    pm.setDefault(true);
+                    return pm;
+                }
+            }
+        }
+        return null;
+    }
+}
+
+package com.myshop.repository.jdbc;
 
 import com.myshop.model.DefaultProduct;
 import com.myshop.repository.ProductRepository;
@@ -685,26 +1027,24 @@ public class ProductRepositoryJdbcImpl implements ProductRepository {
 
     @Override
     public int save(Connection conn, DefaultProduct product) throws Exception {
-        String sql = "INSERT INTO products(product_name, category_name, price) VALUES (?, ?, ?)";
+        String sql = "INSERT INTO products(product_name, category_name, price, stock_quantity, is_active) VALUES (?,?,?,?,?)";
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, product.getProductName());
             ps.setString(2, product.getCategoryName());
             ps.setDouble(3, product.getPrice());
+            ps.setInt(4, product.getStockQuantity());     // NEW
+            ps.setBoolean(5, product.isActive());         // NEW
             ps.executeUpdate();
             try (ResultSet rs = ps.getGeneratedKeys()) {
-                if (rs.next()) {
-                    int id = rs.getInt(1);
-                    return id;
-                } else {
-                    throw new SQLException("No generated key for product");
-                }
+                if (rs.next()) return rs.getInt(1);
+                throw new SQLException("No generated key for product");
             }
         }
     }
 
     @Override
     public DefaultProduct findById(Connection conn, int id) throws Exception {
-        String sql = "SELECT id, product_name, category_name, price FROM products WHERE id = ?";
+        String sql = "SELECT id, product_name, category_name, price, stock_quantity, is_active FROM products WHERE id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
             try (ResultSet rs = ps.executeQuery()) {
@@ -713,18 +1053,40 @@ public class ProductRepositoryJdbcImpl implements ProductRepository {
                             rs.getInt("id"),
                             rs.getString("product_name"),
                             rs.getString("category_name"),
-                            rs.getDouble("price")
+                            rs.getDouble("price"),
+                            rs.getInt("stock_quantity"),
+                            rs.getBoolean("is_active")
                     );
-                } else {
-                    return null;
                 }
+                return null;
             }
         }
     }
 
     @Override
+    public DefaultProduct findByName(Connection conn, String name) throws Exception {
+        String sql = "SELECT id, product_name, category_name, price, stock_quantity, is_active FROM products WHERE product_name = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, name);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new DefaultProduct(
+                            rs.getInt("id"),
+                            rs.getString("product_name"),
+                            rs.getString("category_name"),
+                            rs.getDouble("price"),
+                            rs.getInt("stock_quantity"),
+                            rs.getBoolean("is_active")
+                    );
+                }
+            }
+        }
+        return null;
+    }
+
+    @Override
     public List<DefaultProduct> findAll(Connection conn) throws Exception {
-        String sql = "SELECT id, product_name, category_name, price FROM products";
+        String sql = "SELECT id, product_name, category_name, price, stock_quantity, is_active FROM products";
         List<DefaultProduct> list = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -733,7 +1095,9 @@ public class ProductRepositoryJdbcImpl implements ProductRepository {
                         rs.getInt("id"),
                         rs.getString("product_name"),
                         rs.getString("category_name"),
-                        rs.getDouble("price")
+                        rs.getDouble("price"),
+                        rs.getInt("stock_quantity"),
+                        rs.getBoolean("is_active")
                 ));
             }
         }
@@ -742,12 +1106,14 @@ public class ProductRepositoryJdbcImpl implements ProductRepository {
 
     @Override
     public boolean update(Connection conn, DefaultProduct product) throws Exception {
-        String sql = "UPDATE products SET product_name=?, category_name=?, price=? WHERE id=?";
+        String sql = "UPDATE products SET product_name=?, category_name=?, price=?, stock_quantity=?, is_active=? WHERE id=?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, product.getProductName());
             ps.setString(2, product.getCategoryName());
             ps.setDouble(3, product.getPrice());
-            ps.setInt(4, product.getId());
+            ps.setInt(4, product.getStockQuantity());
+            ps.setBoolean(5, product.isActive());
+            ps.setInt(6, product.getId());
             return ps.executeUpdate() == 1;
         }
     }
@@ -770,10 +1136,15 @@ public class ProductRepositoryJdbcImpl implements ProductRepository {
             return 0;
         }
     }
-}package com.myshop.repository.jdbc;
+}
+
+// com/myshop/repository/jdbc/UserRepositoryJdbcImpl.java
+package com.myshop.repository.jdbc;
 
 import com.myshop.model.DefaultUser;
+import com.myshop.model.Role;
 import com.myshop.repository.UserRepository;
+import org.mindrot.jbcrypt.BCrypt;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -783,41 +1154,33 @@ public class UserRepositoryJdbcImpl implements UserRepository {
 
     @Override
     public int save(Connection conn, DefaultUser user) throws Exception {
-        String sql = "INSERT INTO users(first_name, last_name, password, email) VALUES (?, ?, ?, ?)";
+        // NOTE: no 'password' column here anymore
+        String sql = "INSERT INTO users(first_name, last_name, email, role, password_hash, is_active) VALUES (?,?,?,?,?,1)";
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, user.getFirstName());
             ps.setString(2, user.getLastName());
-            ps.setString(3, user.getPassword());
-            ps.setString(4, user.getEmail());
+            ps.setString(3, user.getEmail());
+            ps.setString(4, user.getRole() == null ? Role.CUSTOMER.name() : user.getRole().name());
+            ps.setString(5, BCrypt.hashpw(user.getPassword(), BCrypt.gensalt()));
             ps.executeUpdate();
-
             try (ResultSet rs = ps.getGeneratedKeys()) {
                 if (rs.next()) {
                     int id = rs.getInt(1);
                     try { user.setId(id); } catch (Exception ignored) {}
                     return id;
-                } else {
-                    throw new SQLException("No generated key after inserting user");
                 }
+                throw new SQLException("No generated key after inserting user");
             }
         }
     }
 
     @Override
     public DefaultUser findById(Connection conn, int id) throws Exception {
-        String sql = "SELECT id, first_name, last_name, password, email FROM users WHERE id = ?";
+        String sql = "SELECT id, first_name, last_name, email, role FROM users WHERE id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
             try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    DefaultUser u = new DefaultUser();
-                    u.setId(rs.getInt("id"));
-                    u.setFirstName(rs.getString("first_name"));
-                    u.setLastName(rs.getString("last_name"));
-                    u.setPassword(rs.getString("password"));
-                    u.setEmail(rs.getString("email"));
-                    return u;
-                }
+                if (rs.next()) return mapUser(rs);
                 return null;
             }
         }
@@ -825,19 +1188,11 @@ public class UserRepositoryJdbcImpl implements UserRepository {
 
     @Override
     public DefaultUser findByEmail(Connection conn, String email) throws Exception {
-        String sql = "SELECT id, first_name, last_name, password, email FROM users WHERE email = ?";
+        String sql = "SELECT id, first_name, last_name, email, role FROM users WHERE email = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, email);
             try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    DefaultUser u = new DefaultUser();
-                    u.setId(rs.getInt("id"));
-                    u.setFirstName(rs.getString("first_name"));
-                    u.setLastName(rs.getString("last_name"));
-                    u.setPassword(rs.getString("password"));
-                    u.setEmail(rs.getString("email"));
-                    return u;
-                }
+                if (rs.next()) return mapUser(rs);
                 return null;
             }
         }
@@ -845,32 +1200,31 @@ public class UserRepositoryJdbcImpl implements UserRepository {
 
     @Override
     public List<DefaultUser> findAll(Connection conn) throws Exception {
-        String sql = "SELECT id, first_name, last_name, password, email FROM users";
+        String sql = "SELECT id, first_name, last_name, email, role FROM users";
         List<DefaultUser> list = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                DefaultUser u = new DefaultUser();
-                u.setId(rs.getInt("id"));
-                u.setFirstName(rs.getString("first_name"));
-                u.setLastName(rs.getString("last_name"));
-                u.setPassword(rs.getString("password"));
-                u.setEmail(rs.getString("email"));
-                list.add(u);
-            }
+            while (rs.next()) list.add(mapUser(rs));
         }
         return list;
     }
 
     @Override
     public boolean update(Connection conn, DefaultUser user) throws Exception {
-        String sql = "UPDATE users SET first_name=?, last_name=?, password=?, email=? WHERE id=?";
+        // If password is provided, re-hash; otherwise leave the existing hash
+        String sql = "UPDATE users SET first_name=?, last_name=?, email=?, role=?, password_hash=? WHERE id=?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, user.getFirstName());
             ps.setString(2, user.getLastName());
-            ps.setString(3, user.getPassword());
-            ps.setString(4, user.getEmail());
-            ps.setInt(5, user.getId());
+            ps.setString(3, user.getEmail());
+            ps.setString(4, user.getRole() == null ? Role.CUSTOMER.name() : user.getRole().name());
+
+            String hash = (user.getPassword()!=null && !user.getPassword().isEmpty())
+                    ? BCrypt.hashpw(user.getPassword(), BCrypt.gensalt())
+                    : getPasswordHashById(conn, user.getId());
+            ps.setString(5, hash);
+
+            ps.setInt(6, user.getId());
             return ps.executeUpdate() == 1;
         }
     }
@@ -883,39 +1237,93 @@ public class UserRepositoryJdbcImpl implements UserRepository {
             return ps.executeUpdate() == 1;
         }
     }
-}package com.myshop.repository;
+
+    // --- Helpers ---
+
+    private DefaultUser mapUser(ResultSet rs) throws Exception {
+        DefaultUser u = new DefaultUser();
+        u.setId(rs.getInt("id"));
+        u.setFirstName(rs.getString("first_name"));
+        u.setLastName(rs.getString("last_name"));
+        u.setEmail(rs.getString("email"));
+        u.setRole(Role.valueOf(rs.getString("role")));
+        // Do not set password from hash
+        return u;
+    }
+
+    public String getPasswordHashById(Connection conn, int id) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement("SELECT password_hash FROM users WHERE id=?")) {
+            ps.setInt(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return rs.getString(1);
+            }
+        }
+        return null;
+    }
+}
+
+package com.myshop.repository;
+
+import com.myshop.model.Notification;
+import java.sql.Connection;
+import java.util.List;
+
+public interface NotificationRepository {
+    int add(Connection conn, Notification n) throws Exception;
+    List<Notification> listUnreadByUser(Connection conn, int userId) throws Exception;
+    int markAllRead(Connection conn, int userId) throws Exception;
+}
+
+package com.myshop.repository;
 
 import java.sql.Connection;
 import java.util.List;
 
 public interface OrderRepository {
-    int saveOrder(Connection conn, int userId, double totalPrice, String creditCardNumber) throws Exception; // returns order id
+    int saveOrder(Connection conn, int userId, double totalPrice, String creditCardNumber) throws Exception;
     void saveOrderItems(Connection conn, int orderId, List<OrderItem> items) throws Exception;
     List<com.myshop.model.DefaultOrder> findOrdersByUserId(Connection conn, int userId) throws Exception;
+
+    // NEW:
+    List<com.myshop.model.DefaultOrder> findAll(Connection conn) throws Exception;
+    boolean updateOrderStatus(Connection conn, int orderId, String newStatus, Integer actorUserId, String reason) throws Exception;
+    List<OrderItem> getOrderItems(Connection conn, int orderId) throws Exception;
 
     class OrderItem {
         public final int productId;
         public final int quantity;
         public OrderItem(int productId, int quantity) {
-            this.productId = productId;
-            this.quantity = quantity;
+            this.productId = productId; this.quantity = quantity;
         }
     }
-}package com.myshop.repository;
+}
+
+package com.myshop.repository;
+
+import com.myshop.model.PaymentMethod;
+import java.sql.Connection;
+
+public interface PaymentMethodRepository {
+    int upsertDefault(Connection conn, PaymentMethod pm) throws Exception;
+    PaymentMethod findDefaultByUserId(Connection conn, int userId) throws Exception;
+}
+
+package com.myshop.repository;
 
 import com.myshop.model.DefaultProduct;
-
 import java.sql.Connection;
 import java.util.List;
 
 public interface ProductRepository {
-    int save(Connection conn, DefaultProduct product) throws Exception; // returns generated id
+    int save(Connection conn, DefaultProduct product) throws Exception;
     DefaultProduct findById(Connection conn, int id) throws Exception;
+    DefaultProduct findByName(Connection conn, String name) throws Exception;      // NEW
     List<DefaultProduct> findAll(Connection conn) throws Exception;
     boolean update(Connection conn, DefaultProduct product) throws Exception;
     boolean delete(Connection conn, int id) throws Exception;
     int count(Connection conn) throws Exception;
-}package com.myshop.repository;
+}
+package com.myshop.repository;
 
 import com.myshop.model.DefaultUser;
 
@@ -929,7 +1337,196 @@ public interface UserRepository {
     List<DefaultUser> findAll(Connection conn) throws Exception;
     boolean update(Connection conn, DefaultUser user) throws Exception;
     boolean delete(Connection conn, int id) throws Exception;
-}package com.myshop.service.impl;
+}
+package com.myshop.service;
+
+public interface AdminService {
+    // Products
+    int createProduct(String name, String category, double price, int stock) throws Exception;
+    boolean updateProduct(int id, String name, String category, double price, int stock, boolean active) throws Exception;
+    boolean deleteProduct(int id) throws Exception; // soft or hard delete depending on impl
+
+    // Orders
+    boolean processOrder(int orderId, int adminUserId) throws Exception;      // PLACED -> PROCESSING
+    boolean shipOrder(int orderId, int adminUserId) throws Exception;         // PROCESSING -> SHIPPED
+    boolean cancelOrder(int orderId, int adminUserId, String reason) throws Exception;
+
+    // Users
+    boolean resetUserEmail(int targetUserId, String newEmail, int adminUserId) throws Exception;
+    boolean resetUserPassword(int targetUserId, String newTempPassword, int adminUserId) throws Exception;
+}
+
+package com.myshop.service;
+
+import com.myshop.model.Order;
+
+public interface AssociateService {
+    Order[] listAllOrders() throws Exception;
+    boolean processOrder(int orderId, int associateUserId) throws Exception;   // PLACED -> PROCESSING
+    boolean cancelOrder(int orderId, int associateUserId, String reason) throws Exception;
+}
+
+package com.myshop.service.impl;
+
+import com.myshop.db.DbConnectionFactory;
+import com.myshop.model.DefaultProduct;
+import com.myshop.repository.ProductRepository;
+import com.myshop.repository.OrderRepository;
+import com.myshop.repository.UserRepository;
+import com.myshop.repository.jdbc.ProductRepositoryJdbcImpl;
+import com.myshop.repository.jdbc.OrderRepositoryJdbcImpl;
+import com.myshop.repository.jdbc.UserRepositoryJdbcImpl;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+
+public class AdminServiceImpl implements com.myshop.service.AdminService {
+    private final ProductRepository productRepo = new ProductRepositoryJdbcImpl();
+    private final OrderRepository orderRepo = new OrderRepositoryJdbcImpl();
+    private final UserRepository userRepo = new UserRepositoryJdbcImpl();
+
+    @Override
+    public int createProduct(String name, String category, double price, int stock) throws Exception {
+        try (Connection conn = DbConnectionFactory.getConnection()) {
+            DefaultProduct p = new DefaultProduct(0, name, category, price, stock, true);
+            return productRepo.save(conn, p);
+        }
+    }
+
+    @Override
+    public boolean updateProduct(int id, String name, String category, double price, int stock, boolean active) throws Exception {
+        try (Connection conn = DbConnectionFactory.getConnection()) {
+            DefaultProduct p = productRepo.findById(conn, id);
+            if (p == null) return false;
+            p = new DefaultProduct(id, name, category, price, stock, active);
+            return productRepo.update(conn, p);
+        }
+    }
+
+    @Override
+    public boolean deleteProduct(int id) throws Exception {
+        try (Connection conn = DbConnectionFactory.getConnection()) {
+            // Hard delete; consider soft delete by setting is_active = 0
+            return productRepo.delete(conn, id);
+        }
+    }
+
+    @Override
+    public boolean processOrder(int orderId, int adminUserId) throws Exception {
+        try (Connection conn = DbConnectionFactory.getConnection()) {
+            return orderRepo.updateOrderStatus(conn, orderId, "PROCESSING", adminUserId, null);
+        }
+    }
+
+    @Override
+    public boolean shipOrder(int orderId, int adminUserId) throws Exception {
+        try (Connection conn = DbConnectionFactory.getConnection()) {
+            return orderRepo.updateOrderStatus(conn, orderId, "SHIPPED", adminUserId, null);
+        }
+    }
+
+    @Override
+    public boolean cancelOrder(int orderId, int adminUserId, String reason) throws Exception {
+        try (Connection conn = DbConnectionFactory.getConnection()) {
+            // restock quantities from order_items
+            var items = orderRepo.getOrderItems(conn, orderId);
+            for (OrderRepository.OrderItem it : items) {
+                try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE products SET stock_quantity = stock_quantity + ? WHERE id=?")) {
+                    ps.setInt(1, it.quantity);
+                    ps.setInt(2, it.productId);
+                    ps.executeUpdate();
+                }
+            }
+            return orderRepo.updateOrderStatus(conn, orderId, "CANCELLED", adminUserId, reason);
+        }
+    }
+
+    @Override
+    public boolean resetUserEmail(int targetUserId, String newEmail, int adminUserId) throws Exception {
+        try (Connection conn = DbConnectionFactory.getConnection()) {
+            var u = userRepo.findById(conn, targetUserId);
+            if (u == null) return false;
+            u.setEmail(newEmail);
+            boolean ok = userRepo.update(conn, u);
+            // audit
+            try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO audits(actor_user_id, action, target, details) VALUES(?,?,?,?)")) {
+                ps.setInt(1, adminUserId);
+                ps.setString(2, "USER_RESET_EMAIL");
+                ps.setString(3, "user:" + targetUserId);
+                ps.setString(4, "newEmail=" + newEmail);
+                ps.executeUpdate();
+            }
+            return ok;
+        }
+    }
+
+    @Override
+    public boolean resetUserPassword(int targetUserId, String newTempPassword, int adminUserId) throws Exception {
+        try (Connection conn = DbConnectionFactory.getConnection()) {
+            var u = userRepo.findById(conn, targetUserId);
+            if (u == null) return false;
+            u.setPassword(newTempPassword); // repo will re-hash on update
+            boolean ok = userRepo.update(conn, u);
+            try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO audits(actor_user_id, action, target, details) VALUES(?,?,?,?)")) {
+                ps.setInt(1, adminUserId);
+                ps.setString(2, "USER_RESET_PASSWORD");
+                ps.setString(3, "user:" + targetUserId);
+                ps.setString(4, "temporary password set");
+                ps.executeUpdate();
+            }
+            return ok;
+        }
+    }
+}
+
+package com.myshop.service.impl;
+
+import com.myshop.db.DbConnectionFactory;
+import com.myshop.repository.OrderRepository;
+import com.myshop.repository.jdbc.OrderRepositoryJdbcImpl;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+
+public class AssociateServiceImpl implements com.myshop.service.AssociateService {
+    private final OrderRepository orderRepo = new OrderRepositoryJdbcImpl();
+
+    @Override
+    public com.myshop.model.Order[] listAllOrders() throws Exception {
+        try (Connection conn = DbConnectionFactory.getConnection()) {
+            var list = orderRepo.findAll(conn);
+            return list.toArray(new com.myshop.model.Order[0]);
+        }
+    }
+
+    @Override
+    public boolean processOrder(int orderId, int associateUserId) throws Exception {
+        try (Connection conn = DbConnectionFactory.getConnection()) {
+            return orderRepo.updateOrderStatus(conn, orderId, "PROCESSING", associateUserId, null);
+        }
+    }
+
+    @Override
+    public boolean cancelOrder(int orderId, int associateUserId, String reason) throws Exception {
+        try (Connection conn = DbConnectionFactory.getConnection()) {
+            // restock items
+            var items = orderRepo.getOrderItems(conn, orderId);
+            for (OrderRepository.OrderItem it : items) {
+                try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE products SET stock_quantity = stock_quantity + ? WHERE id=?")) {
+                    ps.setInt(1, it.quantity);
+                    ps.setInt(2, it.productId);
+                    ps.executeUpdate();
+                }
+            }
+            return orderRepo.updateOrderStatus(conn, orderId, "CANCELLED", associateUserId, reason);
+        }
+    }
+}
+package com.myshop.service.impl;
 
 import com.myshop.db.DbConnectionFactory;
 import com.myshop.model.DefaultOrder;
@@ -973,7 +1570,57 @@ public class OrderManagementServiceImpl implements OrderManagementService {
     public void clearServiceState() {
         // no-op
     }
-}package com.myshop.service.impl;
+}
+package com.myshop.service.impl;
+
+import com.myshop.db.DbConnectionFactory;
+import com.myshop.model.PaymentMethod;
+import com.myshop.repository.PaymentMethodRepository;
+import com.myshop.repository.jdbc.PaymentMethodRepositoryJdbcImpl;
+
+import java.security.MessageDigest;
+import java.sql.Connection;
+
+public class PaymentServiceImpl implements com.myshop.service.PaymentService {
+    private final PaymentMethodRepository repo = new PaymentMethodRepositoryJdbcImpl();
+
+    @Override
+    public int saveOrUpdateDefaultPaymentMethod(int userId, String brand, String pan, int expMonth, int expYear) throws Exception {
+        String last4 = pan.substring(Math.max(0, pan.length()-4));
+        String token = tokenize(pan, userId); // opaque token derived; replace with gateway token when available
+
+        PaymentMethod pm = new PaymentMethod();
+        pm.setUserId(userId);
+        pm.setBrand(brand);
+        pm.setLast4(last4);
+        pm.setExpMonth(expMonth);
+        pm.setExpYear(expYear);
+        pm.setToken(token);
+        pm.setDefault(true);
+
+        try (Connection conn = DbConnectionFactory.getConnection()) {
+            return repo.upsertDefault(conn, pm);
+        }
+    }
+
+    @Override
+    public PaymentMethod getDefaultPaymentMethod(int userId) throws Exception {
+        try (Connection conn = DbConnectionFactory.getConnection()) {
+            return repo.findDefaultByUserId(conn, userId);
+        }
+    }
+
+    // Simple local tokenization (replace with gateway-issued token in real world)
+    private String tokenize(String pan, int userId) throws Exception {
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        String salt = "pm_salt_" + userId; // per-user salt
+        byte[] digest = md.digest((salt + ":" + pan).getBytes());
+        StringBuilder sb = new StringBuilder();
+        for (byte b : digest) sb.append(String.format("%02x", b));
+        return "tok_" + sb;
+    }
+}
+package com.myshop.service.impl;
 
 import com.myshop.db.DbConnectionFactory;
 import com.myshop.model.DefaultProduct;
@@ -1094,64 +1741,72 @@ public interface OrderManagementService {
     Order[] getOrders();
     void clearServiceState();
 }
+
 package com.myshop.service;
 
 import com.myshop.db.DbConnectionFactory;
 import com.myshop.repository.CartRepository;
 import com.myshop.repository.OrderRepository;
-import com.myshop.repository.UserRepository;
-import com.myshop.repository.ProductRepository;
 import com.myshop.repository.CartRepository.CartItem;
 import com.myshop.repository.OrderRepository.OrderItem;
 import com.myshop.repository.jdbc.CartRepositoryJdbcImpl;
 import com.myshop.repository.jdbc.OrderRepositoryJdbcImpl;
 import com.myshop.repository.jdbc.ProductRepositoryJdbcImpl;
-import com.myshop.repository.jdbc.UserRepositoryJdbcImpl;
+import com.myshop.repository.NotificationRepository;
+import com.myshop.repository.jdbc.NotificationRepositoryJdbcImpl;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Service that places order in a single JDBC transaction.
+ * Service that places order in a single JDBC transaction, with stock checks.
  */
 public class OrderService {
-
-    private final UserRepository userRepo = new UserRepositoryJdbcImpl();
-    private final ProductRepository productRepo = new ProductRepositoryJdbcImpl();
     private final CartRepository cartRepo = new CartRepositoryJdbcImpl();
     private final OrderRepository orderRepo = new OrderRepositoryJdbcImpl();
+    private final NotificationRepository notificationRepo = new NotificationRepositoryJdbcImpl();
 
     /**
      * Place order for userId using creditCardNumber.
-     * Steps:
-     *  - Read cart items
-     *  - Compute total
-     *  - Insert into orders
-     *  - Insert order_items
-     *  - Clear cart
-     *
-     * All done inside a single DB transaction. Rolls back on failure.
-     *
-     * Returns created order id.
+     * - Validates user cart
+     * - Locks product rows (SELECT ... FOR UPDATE)
+     * - Ensures stock availability, notifies stock-out if needed
+     * - Inserts order (credit_card_number saved as NULL), items
+     * - Decrements stock atomically
+     * - Clears cart
      */
     public int placeOrder(int userId, String creditCardNumber) throws Exception {
         try (Connection conn = DbConnectionFactory.getConnection()) {
             try {
                 conn.setAutoCommit(false);
 
-                // ensure user exists (optional)
-                if (userRepo.findById(conn, userId) == null) {
-                    throw new IllegalArgumentException("User not found: " + userId);
-                }
-
-                // get cart items
+                // 1) get cart items
                 List<CartItem> items = cartRepo.getCartItems(conn, userId);
-                if (items.isEmpty()) {
-                    throw new IllegalStateException("Cart is empty for user: " + userId);
+                if (items.isEmpty()) throw new IllegalStateException("Cart is empty for user: " + userId);
+
+                // 2) lock & check stock
+                for (CartItem ci : items) {
+                    try (PreparedStatement ps = conn.prepareStatement(
+                            "SELECT stock_quantity FROM products WHERE id=? FOR UPDATE")) {
+                        ps.setInt(1, ci.productId);
+                        try (var rs = ps.executeQuery()) {
+                            if (!rs.next()) throw new IllegalStateException("Product not found: " + ci.productId);
+                            int stock = rs.getInt(1);
+                            if (stock < ci.quantity) {
+                                // notify and abort
+                                com.myshop.model.Notification n = new com.myshop.model.Notification();
+                                n.setUserId(userId);
+                                n.setMessage("Stock out: " + ci.productName + " (requested " + ci.quantity + ", available " + stock + ")");
+                                notificationRepo.add(conn, n);
+                                throw new IllegalStateException("Stock out for " + ci.productName);
+                            }
+                        }
+                    }
                 }
 
-                // compute total and prepare order items
+                // 3) compute total
                 double total = 0.0;
                 List<OrderItem> orderItems = new ArrayList<>();
                 for (CartItem ci : items) {
@@ -1159,27 +1814,44 @@ public class OrderService {
                     orderItems.add(new OrderItem(ci.productId, ci.quantity));
                 }
 
-                // create order
-                int orderId = orderRepo.saveOrder(conn, userId, total, creditCardNumber);
+                // 4) create order (do not store PAN)
+                int orderId = orderRepo.saveOrder(conn, userId, total, null);
 
-                // save order items
+                // 5) save items
                 orderRepo.saveOrderItems(conn, orderId, orderItems);
 
-                // clear cart
+                // 6) decrement stock
+                for (CartItem ci : items) {
+                    try (PreparedStatement ps = conn.prepareStatement(
+                            "UPDATE products SET stock_quantity = stock_quantity - ? WHERE id=?")) {
+                        ps.setInt(1, ci.quantity);
+                        ps.setInt(2, ci.productId);
+                        ps.executeUpdate();
+                    }
+                }
+
+                // 7) clear cart
                 cartRepo.clearCart(conn, userId);
 
-                // commit
                 conn.commit();
                 return orderId;
             } catch (Exception e) {
-                // rollback and rethrow
-                try { conn.rollback(); } catch (Exception ex) { /* log */ }
+                try { conn.rollback(); } catch (Exception ig) {}
                 throw e;
             } finally {
                 conn.setAutoCommit(true);
             }
         }
     }
+}
+
+package com.myshop.service;
+
+import com.myshop.model.PaymentMethod;
+
+public interface PaymentService {
+    int saveOrUpdateDefaultPaymentMethod(int userId, String brand, String pan, int expMonth, int expYear) throws Exception;
+    PaymentMethod getDefaultPaymentMethod(int userId) throws Exception;
 }
 package com.myshop.service;
 
@@ -1199,25 +1871,167 @@ public interface UserManagementService {
     User[] getUsers() throws Exception;
     User getUserByEmail(String userEmail) throws Exception;
     void clearServiceState() throws Exception;
-}package com.myshop.ui;
+}
+package com.myshop.ui;
+
+import com.myshop.app.ApplicationContext;
+import com.myshop.model.Role;
+import com.myshop.service.AdminService;
+import com.myshop.service.impl.AdminServiceImpl;
+
+public class AdminMenu {
+    private final ApplicationContext ctx;
+    private final AdminService admin = new AdminServiceImpl();
+
+    public AdminMenu(ApplicationContext ctx) { this.ctx = ctx; }
+
+    public void start() {
+        if (ctx.getLoggedInUser() == null || ctx.getLoggedInUser().getRole() != Role.ADMIN) {
+            System.out.println("Access denied: Admins only.");
+            return;
+        }
+        while (true) {
+            System.out.println("\n=== ADMIN MENU ===");
+            System.out.println("1. Add Product");
+            System.out.println("2. Edit Product");
+            System.out.println("3. Delete Product");
+            System.out.println("4. Process Order");
+            System.out.println("5. Ship Order");
+            System.out.println("6. Cancel Order");
+            System.out.println("7. Reset User Email");
+            System.out.println("8. Reset User Password");
+            System.out.println("9. Back");
+            System.out.print("Select: ");
+            String in = ctx.getScanner().nextLine().trim();
+            if ("9".equals(in)) return;
+            try {
+                switch (in) {
+                    case "1" -> {
+                        System.out.print("Name: "); String name = ctx.getScanner().nextLine().trim();
+                        System.out.print("Category: "); String cat = ctx.getScanner().nextLine().trim();
+                        System.out.print("Price: "); double price = Double.parseDouble(ctx.getScanner().nextLine().trim());
+                        System.out.print("Stock: "); int stock = Integer.parseInt(ctx.getScanner().nextLine().trim());
+                        int id = admin.createProduct(name, cat, price, stock);
+                        System.out.println("Created product id=" + id);
+                    }
+                    case "2" -> {
+                        System.out.print("ID: "); int id = Integer.parseInt(ctx.getScanner().nextLine().trim());
+                        System.out.print("Name: "); String name = ctx.getScanner().nextLine().trim();
+                        System.out.print("Category: "); String cat = ctx.getScanner().nextLine().trim();
+                        System.out.print("Price: "); double price = Double.parseDouble(ctx.getScanner().nextLine().trim());
+                        System.out.print("Stock: "); int stock = Integer.parseInt(ctx.getScanner().nextLine().trim());
+                        System.out.print("Active (true/false): "); boolean active = Boolean.parseBoolean(ctx.getScanner().nextLine().trim());
+                        System.out.println(admin.updateProduct(id, name, cat, price, stock, active) ? "Updated." : "Update failed.");
+                    }
+                    case "3" -> {
+                        System.out.print("ID: "); int id = Integer.parseInt(ctx.getScanner().nextLine().trim());
+                        System.out.println(admin.deleteProduct(id) ? "Deleted." : "Delete failed.");
+                    }
+                    case "4" -> {
+                        System.out.print("Order ID: "); int oid = Integer.parseInt(ctx.getScanner().nextLine().trim());
+                        System.out.println(admin.processOrder(oid, ctx.getLoggedInUser().getId()) ? "Order moved to PROCESSING." : "Fail.");
+                    }
+                    case "5" -> {
+                        System.out.print("Order ID: "); int oid = Integer.parseInt(ctx.getScanner().nextLine().trim());
+                        System.out.println(admin.shipOrder(oid, ctx.getLoggedInUser().getId()) ? "Order moved to SHIPPED." : "Fail.");
+                    }
+                    case "6" -> {
+                        System.out.print("Order ID: "); int oid = Integer.parseInt(ctx.getScanner().nextLine().trim());
+                        System.out.print("Reason: "); String reason = ctx.getScanner().nextLine().trim();
+                        System.out.println(admin.cancelOrder(oid, ctx.getLoggedInUser().getId(), reason) ? "Order cancelled." : "Fail.");
+                    }
+                    case "7" -> {
+                        System.out.print("User ID: "); int uid = Integer.parseInt(ctx.getScanner().nextLine().trim());
+                        System.out.print("New Email: "); String email = ctx.getScanner().nextLine().trim();
+                        System.out.println(admin.resetUserEmail(uid, email, ctx.getLoggedInUser().getId()) ? "Email reset." : "Fail.");
+                    }
+                    case "8" -> {
+                        System.out.print("User ID: "); int uid = Integer.parseInt(ctx.getScanner().nextLine().trim());
+                        System.out.print("Temp Password: "); String pw = ctx.getScanner().nextLine().trim();
+                        System.out.println(admin.resetUserPassword(uid, pw, ctx.getLoggedInUser().getId()) ? "Password reset." : "Fail.");
+                    }
+                    default -> System.out.println("Unknown option.");
+                }
+            } catch (Exception ex) {
+                System.out.println("Error: " + ex.getMessage());
+            }
+        }
+    }
+}
+
+package com.myshop.ui;
+
+import com.myshop.app.ApplicationContext;
+import com.myshop.model.Role;
+import com.myshop.service.AssociateService;
+import com.myshop.service.impl.AssociateServiceImpl;
+
+public class AssociateMenu {
+    private final ApplicationContext ctx;
+    private final AssociateService svc = new AssociateServiceImpl();
+
+    public AssociateMenu(ApplicationContext ctx) { this.ctx = ctx; }
+
+    public void start() {
+        if (ctx.getLoggedInUser() == null || ctx.getLoggedInUser().getRole() == Role.CUSTOMER) {
+            System.out.println("Access denied: Associates/Admins only.");
+            return;
+        }
+        while (true) {
+            System.out.println("\n=== ASSOCIATE MENU ===");
+            System.out.println("1. View All Orders");
+            System.out.println("2. Process Order");
+            System.out.println("3. Cancel Order");
+            System.out.println("4. Back");
+            System.out.print("Select: ");
+            String in = ctx.getScanner().nextLine().trim();
+            if ("4".equals(in)) return;
+            try {
+                switch (in) {
+                    case "1" -> {
+                        var orders = svc.listAllOrders();
+                        if (orders.length == 0) System.out.println("No orders.");
+                        for (var o : orders) System.out.println(o);
+                    }
+                    case "2" -> {
+                        System.out.print("Order ID: "); int oid = Integer.parseInt(ctx.getScanner().nextLine().trim());
+                        System.out.println(svc.processOrder(oid, ctx.getLoggedInUser().getId()) ? "Order moved to PROCESSING." : "Fail.");
+                    }
+                    case "3" -> {
+                        System.out.print("Order ID: "); int oid = Integer.parseInt(ctx.getScanner().nextLine().trim());
+                        System.out.print("Reason: "); String reason = ctx.getScanner().nextLine().trim();
+                        System.out.println(svc.cancelOrder(oid, ctx.getLoggedInUser().getId(), reason) ? "Order cancelled." : "Fail.");
+                    }
+                    default -> System.out.println("Unknown option.");
+                }
+            } catch (Exception ex) {
+                System.out.println("Error: " + ex.getMessage());
+            }
+        }
+    }
+}
+
+package com.myshop.ui;
 
 import com.myshop.app.ApplicationContext;
 import com.myshop.core.Shop;
 import com.myshop.model.Product;
 import com.myshop.model.User;
+import com.myshop.model.Role;
+import com.myshop.service.PaymentService;
+import com.myshop.service.impl.PaymentServiceImpl;
 
 import java.util.Scanner;
 
 public class MainMenu {
-
     private final ApplicationContext ctx = ApplicationContext.getInstance();
     private final Shop shop = ctx.getShop();
     private final Scanner scanner = ctx.getScanner();
+    private final PaymentService paymentService = new PaymentServiceImpl();
 
-    public MainMenu() throws Exception {
-    }
+    public MainMenu() throws Exception { }
 
-    public void start() {
+    public void start() throws Exception {
         boolean running = true;
         while (running) {
             printMainMenu();
@@ -1233,9 +2047,8 @@ public class MainMenu {
                 case "3": cmdProductCatalog(); break;
                 case "4": cmdMyOrders(); break;
                 case "5": cmdSettings(); break;
-                case "6": cmdCustomerList(); break;
-                default:
-                    System.out.println("Only 1, 2, 3, 4, 5 is allowed. Try one more time.");
+                case "6": cmdCustomerList(); break; // restrict inside method
+                default: System.out.println("Only 1, 2, 3, 4, 5, 6 is allowed. Try one more time.");
             }
         }
     }
@@ -1249,40 +2062,35 @@ public class MainMenu {
         System.out.println("3. Product Catalog");
         System.out.println("4. My Orders");
         System.out.println("5. Settings");
-        System.out.println("6. Customer List");
+        System.out.println("6. Customer List (Admins/Associates)");
         System.out.println("Type 'exit' to close program.");
         System.out.print("Select option: ");
     }
 
-    private void cmdSignUp() {
+    private void cmdSignUp() throws Exception {
         System.out.println("\n--- Sign Up ---");
-        System.out.print("Enter first name: ");
-        String first = scanner.nextLine().trim();
-        System.out.print("Enter last name: ");
-        String last = scanner.nextLine().trim();
-        System.out.print("Enter password: ");
-        String pass = scanner.nextLine().trim();
-        System.out.print("Enter email: ");
-        String email = scanner.nextLine().trim();
-
+        System.out.print("Enter first name: "); String first = scanner.nextLine().trim();
+        System.out.print("Enter last name: ");  String last = scanner.nextLine().trim();
+        System.out.print("Enter password: ");  String pass = scanner.nextLine().trim();
+        System.out.print("Enter email: ");     String email = scanner.nextLine().trim();
         String res = shop.register(first, last, email, pass);
         System.out.println(res);
         if ("New user is created".equals(res)) {
             shop.login(email, pass);
             System.out.println("You are now signed in.");
+            postLoginRoleRouting();
         }
     }
 
-    private void cmdSignInOrOut() {
+    private void cmdSignInOrOut() throws Exception {
         if (ctx.getLoggedInUser() == null) {
             System.out.println("\n--- Sign In ---");
-            System.out.print("Enter email: ");
-            String email = scanner.nextLine().trim();
-            System.out.print("Enter password: ");
-            String pass = scanner.nextLine().trim();
+            System.out.print("Enter email: "); String email = scanner.nextLine().trim();
+            System.out.print("Enter password: "); String pass = scanner.nextLine().trim();
             boolean ok = shop.login(email, pass);
             if (ok) {
                 System.out.println("Glad to see you back " + ctx.getLoggedInUser().getFirstName() + " " + ctx.getLoggedInUser().getLastName());
+                postLoginRoleRouting();
             } else {
                 System.out.println("Unfortunately, such login and password doesn’t exist");
             }
@@ -1292,17 +2100,27 @@ public class MainMenu {
         }
     }
 
+    private void postLoginRoleRouting() {
+        var u = ctx.getLoggedInUser();
+        if (u == null) return;
+        if (u.getRole() == Role.ADMIN) new AdminMenu(ctx).start();
+        else if (u.getRole() == Role.ASSOCIATE) new AssociateMenu(ctx).start();
+    }
+
+    // unchanged catalog, with stock info shown
     private void cmdProductCatalog() {
         while (true) {
             System.out.println("\n--- Product Catalog ---");
             Product[] products = shop.getAllProducts();
             for (Product p : products) {
+                // DefaultProduct.toString prints stock; for general Product we show basic info
                 System.out.printf("%d) %s (%s) - %.2f%n", p.getId(), p.getProductName(), p.getCategoryName(), p.getPrice());
             }
             System.out.println("Enter product id to add it to the cart or 'checkout' to proceed to checkout or 'menu' to go back to main menu.");
             System.out.print("Your input: ");
             String input = scanner.nextLine().trim();
             if ("menu".equalsIgnoreCase(input)) return;
+
             if ("checkout".equalsIgnoreCase(input)) {
                 if (ctx.getSessionCart().isEmpty() && ctx.getLoggedInUser() == null) {
                     System.out.println("Your cart is empty. Please, add product to cart first and then proceed with checkout");
@@ -1357,49 +2175,67 @@ public class MainMenu {
         while (true) {
             System.out.println("1. Change Password");
             System.out.println("2. Change Email");
+            System.out.println("3. Manage Payment Method");
             System.out.println("Type 'menu' to go back to main menu");
             System.out.print("Select option: ");
             String opt = scanner.nextLine().trim();
             if ("menu".equalsIgnoreCase(opt)) return;
-            if ("1".equals(opt)) {
-                System.out.print("Enter new password: ");
-                String np = scanner.nextLine().trim();
-                if (shop.changePassword(np)) System.out.println("Your password has been successfully changed");
-                return;
-            } else if ("2".equals(opt)) {
-                System.out.print("Enter new email: ");
-                String ne = scanner.nextLine().trim();
-                if (shop.changeEmail(ne)) System.out.println("Your email has been successfully changed");
-                return;
-            } else {
-                System.out.println("Only 1, 2 is allowed. Try one more time");
+            try {
+                switch (opt) {
+                    case "1" -> {
+                        System.out.print("Enter new password: ");
+                        String np = scanner.nextLine().trim();
+                        if (shop.changePassword(np)) System.out.println("Your password has been successfully changed");
+                        return;
+                    }
+                    case "2" -> {
+                        System.out.print("Enter new email: ");
+                        String ne = scanner.nextLine().trim();
+                        if (shop.changeEmail(ne)) System.out.println("Your email has been successfully changed");
+                        return;
+                    }
+                    case "3" -> {
+                        System.out.print("Brand (e.g., VISA): "); String brand = scanner.nextLine().trim();
+                        System.out.print("Card Number (PAN): ");   String pan = scanner.nextLine().trim();
+                        System.out.print("Exp Month (1..12): ");   int mm = Integer.parseInt(scanner.nextLine().trim());
+                        System.out.print("Exp Year (yyyy): ");     int yy = Integer.parseInt(scanner.nextLine().trim());
+                        int pmId = paymentService.saveOrUpdateDefaultPaymentMethod(ctx.getLoggedInUser().getId(), brand, pan, mm, yy);
+                        System.out.println("Saved default payment method id=" + pmId);
+                        return;
+                    }
+                    default -> System.out.println("Only 1, 2, 3 is allowed. Try one more time");
+                }
+            } catch (Exception e) {
+                System.out.println("Error: " + e.getMessage());
             }
         }
     }
 
     private void cmdCustomerList() {
         System.out.println("\n--- Customer List ---");
+        if (ctx.getLoggedInUser() == null || ctx.getLoggedInUser().getRole() == Role.CUSTOMER) {
+            System.out.println("Access denied: Admins/Associates only.");
+            return;
+        }
         try {
             var users = ctx.getUserService().getUsers();
             for (User u : users) {
-                System.out.printf("ID:%d Name:%s %s Email:%s%n", u.getId(), u.getFirstName(), u.getLastName(), u.getEmail());
+                System.out.printf("ID:%d Role:%s Name:%s %s Email:%s%n", u.getId(), u.getRole(), u.getFirstName(), u.getLastName(), u.getEmail());
             }
         } catch (Exception e) {
             System.out.println("Failed to load users: " + e.getMessage());
         }
     }
 }
+
 package com.myshop.util;
 
 import com.myshop.app.ApplicationContext;
 import com.myshop.core.Shop;
 import com.myshop.model.DefaultProduct;
-import com.myshop.service.impl.ProductManagementServiceImpl;
-import com.myshop.service.impl.UserManagementServiceImpl;
-import com.myshop.service.impl.OrderManagementServiceImpl;
+import com.myshop.model.Role;
 
 public class ShopLoader {
-
     private ShopLoader() {}
 
     public static Shop loadShop(ApplicationContext ctx) {
@@ -1407,95 +2243,25 @@ public class ShopLoader {
             ctx.getUserService().clearServiceState();
             ctx.getProductService().clearServiceState();
             ctx.getOrderService().clearServiceState();
-        } catch (Exception e) {
-            // ignore
-        }
+        } catch (Exception e) { /* ignore */ }
 
-        if (ctx.getProductService() instanceof ProductManagementServiceImpl) {
-            try {
-                ((ProductManagementServiceImpl) ctx.getProductService()).addProduct(new DefaultProduct(10, "Laptop", "Electronics", 55000));
-                ((ProductManagementServiceImpl) ctx.getProductService()).addProduct(new DefaultProduct(11, "Shoes", "Fashion", 2500));
-            } catch (Exception e) {
-                // ignore
-            }
-        }
+        // REMOVE: the unconditional adds of Laptop/Shoes.
+        // Rely on ProductManagementServiceImpl#initDefaults() which seeds only when empty.
 
+        // Seed Admin user with ADMIN role (registerUser will ignore if email exists)
         try {
             ctx.getUserService().registerUser(new com.myshop.model.DefaultUser() {{
                 setFirstName("Admin");
                 setLastName("User");
                 setEmail("admin@gmail.com");
                 setPassword("admin123");
+                setRole(Role.ADMIN);     // NEW: assign admin role
             }});
-        } catch (Exception e) {
-            // ignore
-        }
+        } catch (Exception e) { /* ignore */ }
 
-        // create Shop with services + context
         return new Shop(ctx.getUserService(), ctx.getProductService(), ctx.getOrderService(), new com.myshop.service.OrderService(), ctx);
     }
 }
-
-DB Schema: 
--- Create DB
-CREATE DATABASE IF NOT EXISTS myshop;
-USE myshop;
-
--- users
-CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    email VARCHAR(150) NOT NULL UNIQUE
-);
-
--- products
-CREATE TABLE IF NOT EXISTS products (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    product_name VARCHAR(200) NOT NULL,
-    category_name VARCHAR(100),
-    price DOUBLE NOT NULL
-);
-
--- carts (one row per user)
-CREATE TABLE IF NOT EXISTS carts (
-    user_id INT PRIMARY KEY,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
--- cart_items
-CREATE TABLE IF NOT EXISTS cart_items (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    cart_user_id INT NOT NULL,
-    product_id INT NOT NULL,
-    quantity INT NOT NULL DEFAULT 1,
-    FOREIGN KEY (cart_user_id) REFERENCES carts(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (product_id) REFERENCES products(id)
-);
-
--- orders
-CREATE TABLE IF NOT EXISTS orders (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    total_price DOUBLE NOT NULL,
-    credit_card_number VARCHAR(32),
-    order_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-
--- order_items
-CREATE TABLE IF NOT EXISTS order_items (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    order_id INT NOT NULL,
-    product_id INT NOT NULL,
-    quantity INT NOT NULL,
-    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
-    FOREIGN KEY (product_id) REFERENCES products(id)
-);
-
-
-pom.xml: 
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -1520,6 +2286,15 @@ pom.xml:
         </dependency>
 
 
+        <!-- Add under <dependencies> -->
+        <dependency>
+            <groupId>org.mindrot</groupId>
+            <artifactId>jbcrypt</artifactId>
+            <version>0.4</version>
+        </dependency>
+
+
+
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
@@ -1527,4 +2302,3 @@ pom.xml:
         </dependency>
     </dependencies>
 </project>
-
