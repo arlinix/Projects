@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:replace="layout :: layout">
+  <head><title>Orders</title></head>
+  <body>
+    <h2>Your Orders</h2>
+    <div th:if="${orders}">
+      <ul>
+        <li th:each="o : ${orders}" th:text="${o}"></li>
+      </ul>
+    </div>
+  </body>
+</html>

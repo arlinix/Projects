@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:replace="layout :: layout">
+  <head><title>Products</title></head>
+  <body>
+    <h2>Products</h2>
+    <ul>
+      <li th:each="p : ${products}">
+        <span th:text="${p.productName}"></span> - <span th:text="${p.price}"></span>
+        <a th:href="@{'/cart/add/' + ${p.id}}">Add</a>
+      </li>
+    </ul>
+  </body>
+</html>

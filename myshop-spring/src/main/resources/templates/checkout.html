@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:replace="layout :: layout">
+  <head><title>Checkout</title></head>
+  <body>
+    <h2>Checkout</h2>
+    <div th:if="${error}"><p th:text="${error}"></p></div>
+    <form th:action="@{/order/place}" method="post">
+      <input name="ccNumber" placeholder="16-digit credit card" required maxlength="16"/><br/>
+      <button type="submit">Place order</button>
+    </form>
+  </body>
+</html>

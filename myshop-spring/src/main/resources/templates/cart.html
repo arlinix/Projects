@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:replace="layout :: layout">
+  <head><title>Cart</title></head>
+  <body>
+    <h2>Your Cart</h2>
+    <div th:if="${#lists.isEmpty(cartItems)}">Cart is empty</div>
+    <ul>
+      <li th:each="p : ${cartItems}">
+        <span th:text="${p.productName}"></span> - <span th:text="${p.price}"></span>
+      </li>
+    </ul>
+    <a th:href="@{/order/checkout}">Proceed to Checkout</a>
+  </body>
+</html>
